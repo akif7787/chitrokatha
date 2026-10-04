@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-bengali: 'Hind Siliguri', 'Noto Sans Bengali', system-ui, sans-serif;
+    --font-display: 'Cinzel', serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--font-bengali), var(--font-sans);
+    background-color: #08090d;
+    color: #e2e8f0;
+    overflow-x: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  h1, h2, h3, .font-cinzel {
+    font-family: var(--font-display), var(--font-bengali);
+  }
+}
+
+/* Custom horizontal scrollbar for movie carousels */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(225, 29, 72, 0.4);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(225, 29, 72, 0.8);
+}
+
+/* ==================================================== */
+/* HIGH-CONTRAST LIGHT MODE ACCESSIBILITY THEME ENGINE  */
+/* ==================================================== */
+html.light {
+  color-scheme: light;
+}
+
+html.light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light header {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-bottom-color: rgba(15, 23, 42, 0.1) !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+html.light footer {
+  background-color: #ffffff !important;
+  border-top-color: rgba(15, 23, 42, 0.1) !important;
+  color: #475569 !important;
+}
+
+html.light .bg-\[\#08090d\]\/95,
+html.light .bg-\[\#08090d\],
+html.light .bg-\[\#0c0e15\],
+html.light .bg-\[\#0d101a\],
+html.light .bg-\[\#06070a\],
+html.light .bg-\[\#0a0c12\],
+html.light .bg-\[\#0f1118\],
+html.light .bg-slate-950 {
+  background-color: #ffffff !important;
+  color: #0f172a;
+}
+
+html.light .text-white {
+  color: #0f172a !important;
+}
+
+html.light .text-slate-200,
+html.light .text-slate-300 {
+  color: #1e293b !important;
+}
+
+html.light .text-slate-400 {
+  color: #475569 !important;
+}
+
+html.light .border-white\/5,
+html.light .border-white\/10,
+html.light .border-white\/15,
+html.light .border-white\/20 {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+html.light .bg-white\/5 {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-white\/10 {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-black\/60,
+html.light .bg-black\/70,
+html.light .bg-black\/75,
+html.light .bg-black\/80,
+html.light .bg-black\/85 {
+  background-color: rgba(255, 255, 255, 0.94) !important;
+  color: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.15) !important;
+}
+
+html.light .bg-slate-900 {
+  background-color: #f1f5f9 !important;
+}
+
+html.light .custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.8);
+}

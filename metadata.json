@@ -1,0 +1,7 @@
+{
+  "name": "ChitroKatha - বাংলা ও বিশ্ব সিনেমা",
+  "description": "অনলাইনে সিনেমা দেখার চমৎকার প্ল্যাটফর্ম - বাংলা ও বিশ্ব সেরা চলচ্চিত্র, এইচডি ট্রেলার, লাইভ এপিআই ও ওয়াচলিস্ট। Bilingual Bangla & English movie streaming and cinema discovery platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

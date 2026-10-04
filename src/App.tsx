@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import AdminApp from './admin/AdminApp';
 import { ThemeProvider } from './context/ThemeContext';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { WatchlistProvider } from './context/WatchlistContext';
@@ -746,6 +747,26 @@ function ChitroKathaApp() {
 }
 
 export default function App() {
+  const [isAdminRoute, setIsAdminRoute] = useState(() => {
+    return typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setIsAdminRoute(window.location.pathname.startsWith('/admin'));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  if (isAdminRoute) {
+    return (
+      <ThemeProvider>
+        <AdminApp />
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider>
       <LanguageProvider>

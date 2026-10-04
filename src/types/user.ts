@@ -29,6 +29,8 @@ export interface UserProfile {
   pausedUntil?: string;
   pauseDays?: number;
   cancellationReason?: string;
+  role?: 'user' | 'admin' | 'super_admin';
+  status?: 'active' | 'suspended' | 'banned';
 }
 
 export interface MovieRequest {

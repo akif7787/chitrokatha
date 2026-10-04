@@ -8,6 +8,7 @@ import {
   Mail,
   Send,
   CheckCircle2,
+  Shield
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { ThemeToggle } from './ThemeToggle';
@@ -224,6 +225,20 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
                 >
                   {t('navWatchlist')}
                 </button>
+              </li>
+              <li className="pt-1">
+                <a
+                  href="/admin"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/admin');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="inline-flex items-center gap-1.5 text-rose-400 hover:text-rose-300 font-semibold transition-colors cursor-pointer"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>{language === 'bn' ? 'অ্যাডমিন প্যানেল' : 'Admin Panel'}</span>
+                </a>
               </li>
             </ul>
           </div>

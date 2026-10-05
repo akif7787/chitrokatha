@@ -13,6 +13,7 @@ export type AdminRoute =
   | '/admin/coupons'
   | '/admin/analytics'
   | '/admin/settings'
+  | '/admin/support'
   | '/admin/admins';
 
 export type AdminRole = 'super_admin' | 'admin' | 'content_manager' | 'support_manager';

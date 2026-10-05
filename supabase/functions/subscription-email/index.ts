@@ -5,8 +5,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-interface SubscriptionEmailPayload {
-  recipientEmail: string;
+interface EmailPayload {
+  action?: 'subscription_confirmation' | 'admin_new_payment_alert' | 'admin_support_alert';
+  recipientEmail?: string;
   recipientName?: string;
   planName?: string;
   tier?: string;
@@ -15,12 +16,25 @@ interface SubscriptionEmailPayload {
   startDate?: string;
   endDate?: string;
   idempotencyKey?: string;
+  // Admin alert fields
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  userPhone?: string;
+  method?: string;
+  senderPhone?: string;
+  requestTime?: string;
+  adminUrl?: string;
+  // Support ticket fields
+  ticketSubject?: string;
+  ticketCategory?: string;
+  ticketMessage?: string;
 }
 
 // In-memory idempotency cache for duplicate prevention
-const sentConfirmationKeys = new Set<string>();
+const sentKeys = new Set<string>();
 
-function renderSubscriptionEmail(payload: SubscriptionEmailPayload): string {
+function renderSubscriptionEmail(payload: EmailPayload): string {
   const name = payload.recipientName?.trim() || "সম্মানিত দর্শক (Valued Member)";
   const planDisplay = payload.planName || (payload.tier === 'vip' ? 'ChitroKatha VIP All-Access Pass (৪কে ও অ্যাড-ফ্রি)' : 'ChitroKatha Standard Pass');
   const amountDisplay = payload.amount !== undefined ? (payload.amount === 0 ? '৳০ (১০০% ফ্রি স্পেশাল অফার)' : `৳${payload.amount}`) : 'পরিশোধিত (Paid)';
@@ -111,7 +125,7 @@ function renderSubscriptionEmail(payload: SubscriptionEmailPayload): string {
                 </tr>
                 <tr>
                   <td style="padding: 12px 18px; font-size: 12px; color: #a1a1aa;">
-                    মেয়াদ শেষ (Expiry Date):
+                    মেয়াদ উত্তীর্ণের তারিখ (Valid Until):
                   </td>
                   <td style="padding: 12px 18px; font-size: 12px; color: #34d399; font-weight: 700; text-align: right;">
                     ${endDateDisplay}
@@ -119,37 +133,178 @@ function renderSubscriptionEmail(payload: SubscriptionEmailPayload): string {
                 </tr>
               </table>
 
-              <!-- Watch Now Action Button -->
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 28px 0 24px;">
+              <!-- Action CTA Button -->
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 26px;">
                 <tr>
                   <td align="center">
-                    <a href="https://chitrokatha.online" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #f59e0b 0%, #e11d48 100%); color: #000000; font-size: 14px; font-weight: 900; text-decoration: none; border-radius: 14px; letter-spacing: 0.5px; box-shadow: 0 10px 25px -5px rgba(245, 158, 11, 0.5); text-transform: uppercase;">
-                      Watch on ChitroKatha • সিনেমা দেখুন
+                    <a href="https://chitrokatha.online" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #f59e0b, #e11d48); color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 34px; border-radius: 9999px; box-shadow: 0 10px 25px -5px rgba(225, 29, 72, 0.5); letter-spacing: 0.5px;">
+                      চলচ্চিত্র উপভোগ করুন (Start Watching) &rarr;
                     </a>
                   </td>
                 </tr>
               </table>
-
-              <!-- Support Note -->
-              <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); padding: 14px 16px; border-radius: 10px; margin-top: 24px;">
-                <p style="margin: 0 0 4px; font-size: 12px; font-weight: 700; color: #fbbf24;">
-                  💬 কাস্টমার সাপোর্ট ও হেল্প (Customer Support):
-                </p>
-                <p style="margin: 0; font-size: 11px; color: #d4d4d8; line-height: 1.5;">
-                  সাবস্ক্রিপশন সংক্রান্ত যেকোনো প্রয়োজনে সরাসরি আমাদের ওয়েবসাইটে অ্যাডমিন সাপোর্ট চ্যাট করুন অথবা ইমেইল করুন: <a href="mailto:security@chitrokatha.online" style="color: #f43f5e; text-decoration: underline;">security@chitrokatha.online</a>
-                </p>
-              </div>
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 20px 30px; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.06); background: #0a0c12;">
-              <p style="margin: 0; font-size: 11px; color: #52525b;">
-                © 2026 ChitroKatha (চিত্রকথা). All rights reserved.
+            <td style="padding: 24px 30px; background: rgba(0, 0, 0, 0.4); border-top: 1px solid rgba(255, 255, 255, 0.05); text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #71717a; line-height: 1.5;">
+                চিত্রকথা — বাংলা ও বিশ্ব চলচ্চিত্রের ডিজিটাল সংগ্রহশালা<br>
+                ChitroKatha • <a href="https://chitrokatha.online" style="color: #fbbf24; text-decoration: none;">chitrokatha.online</a> • Help: security@chitrokatha.online
               </p>
               <p style="margin: 4px 0 0; font-size: 10px; color: #3f3f46;">
                 Automated Transaction Receipt • Official Billing Notification
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+function renderAdminNewPaymentAlert(payload: EmailPayload): string {
+  const userName = payload.userName?.trim() || "অজ্ঞাত ব্যবহারকারী (Unknown)";
+  const userEmail = payload.userEmail || "N/A";
+  const userPhone = payload.userPhone || payload.senderPhone || "N/A";
+  const planDisplay = payload.planName || (payload.tier === 'vip' ? 'VIP All-Access Pass (৳499)' : 'Standard Pass (৳99)');
+  const amountDisplay = payload.amount !== undefined ? `৳${payload.amount}` : "N/A";
+  const methodDisplay = (payload.method || 'bkash').toUpperCase();
+  const senderPhone = payload.senderPhone || "N/A";
+  const trxDisplay = payload.trxId ? payload.trxId.toUpperCase() : "N/A";
+  const timeDisplay = payload.requestTime || new Date().toLocaleString('bn-BD', { timeZone: 'Asia/Dhaka' });
+  const adminUrl = payload.adminUrl || "https://chitrokatha.online/admin";
+
+  return `<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChitroKatha — নতুন Subscription Request</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #07090e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #ffffff;">
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #07090e; padding: 36px 18px;">
+    <tr>
+      <td align="center">
+        <!-- Main Card -->
+        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; background: #0e111a; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 20px; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);">
+          <!-- Header Banner -->
+          <tr>
+            <td style="padding: 32px 30px 20px; text-align: center; background: linear-gradient(180deg, rgba(245, 158, 11, 0.18) 0%, rgba(225, 29, 72, 0.1) 60%, rgba(14, 17, 26, 0) 100%);">
+              <div style="display: inline-block; width: 48px; height: 48px; line-height: 48px; border-radius: 14px; background: linear-gradient(135deg, #f59e0b, #e11d48); font-size: 24px; margin-bottom: 10px; box-shadow: 0 10px 20px -5px rgba(245, 158, 11, 0.4);">
+                🔔
+              </div>
+              <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px; color: #ffffff; text-transform: uppercase;">
+                ChitroKatha <span style="color: #f59e0b;">চিত্রকথা</span>
+              </h1>
+              <p style="margin: 6px 0 0; font-size: 13px; color: #fbbf24; font-weight: 700;">
+                ★ নতুন Subscription / Payment Request অ্যালার্ট ★
+              </p>
+            </td>
+          </tr>
+
+          <!-- Alert Body -->
+          <tr>
+            <td style="padding: 10px 32px 28px;">
+              <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; text-align: center;">
+                <p style="margin: 0; font-size: 14px; font-weight: 700; color: #fbbf24;">
+                  ⚠️ স্ট্যাটাস: PENDING (যাচাইকরণাধীন)
+                </p>
+                <p style="margin: 4px 0 0; font-size: 12px; color: #d4d4d8;">
+                  একজন নতুন ব্যবহারকারী ChitroKatha subscription-এর জন্য payment request পাঠিয়েছেন। অনুগ্রহ করে Admin Panel থেকে payment verification করে Approve অথবা Reject করুন।
+                </p>
+              </div>
+
+              <!-- Details Table -->
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 14px; margin: 16px 0; overflow: hidden;">
+                <tr>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #a1a1aa;">
+                    ব্যবহারকারীর নাম (User):
+                  </td>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #ffffff; font-weight: 700; text-align: right;">
+                    ${userName}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #a1a1aa;">
+                    ইমেইল (Email):
+                  </td>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #38bdf8; text-align: right; font-family: monospace;">
+                    ${userEmail}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #a1a1aa;">
+                    নির্বাচিত প্ল্যান (Plan):
+                  </td>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #fbbf24; font-weight: 700; text-align: right;">
+                    ${planDisplay}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #a1a1aa;">
+                    পরিশোধের পরিমাণ (Amount):
+                  </td>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #34d399; font-weight: 700; text-align: right; font-family: monospace;">
+                    ${amountDisplay}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #a1a1aa;">
+                    পেমেন্ট মাধ্যম (Method):
+                  </td>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #ffffff; font-weight: 700; text-align: right;">
+                    ${methodDisplay}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #a1a1aa;">
+                    প্রেরক নম্বর (Sender Phone):
+                  </td>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #e4e4e7; font-family: monospace; text-align: right;">
+                    ${senderPhone}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 12px; color: #a1a1aa;">
+                    ট্রানজেকশন আইডি (TrxID):
+                  </td>
+                  <td style="padding: 11px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 13px; color: #f43f5e; font-weight: 800; font-family: monospace; text-align: right; letter-spacing: 0.5px;">
+                    ${trxDisplay}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 11px 16px; font-size: 12px; color: #a1a1aa;">
+                    অনুরোধের সময় (Request Time):
+                  </td>
+                  <td style="padding: 11px 16px; font-size: 12px; color: #94a3b8; text-align: right;">
+                    ${timeDisplay}
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA Button -->
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 24px;">
+                <tr>
+                  <td align="center">
+                    <a href="${adminUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #e11d48, #f59e0b); color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 13px 32px; border-radius: 9999px; box-shadow: 0 10px 25px -5px rgba(225, 29, 72, 0.5); letter-spacing: 0.5px;">
+                      Open Admin Panel / অ্যাডমিন প্যানেল খুলুন &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 24px; background: rgba(0, 0, 0, 0.4); border-top: 1px solid rgba(255, 255, 255, 0.05); text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #71717a;">
+                ChitroKatha Automated Security System • Admin Notification<br>
+                Direct Admin Route: <a href="${adminUrl}" style="color: #fbbf24; text-decoration: none;">${adminUrl}</a>
               </p>
             </td>
           </tr>
@@ -168,8 +323,79 @@ serve(async (req) => {
   }
 
   try {
-    const payload: SubscriptionEmailPayload = await req.json();
+    const payload: EmailPayload = await req.json();
+    const action = payload.action || 'subscription_confirmation';
 
+    const resendApiKey = Deno.env.get("RESEND_API_KEY");
+    const emailFrom = Deno.env.get("EMAIL_FROM") || "ChitroKatha <security@chitrokatha.online>";
+    const defaultAdminEmail = Deno.env.get("ADMIN_NOTIFICATION_EMAIL") || "security@chitrokatha.online";
+
+    if (action === 'admin_new_payment_alert') {
+      const recipient = defaultAdminEmail;
+      const idempotencyKey = payload.idempotencyKey || `admin_alert_${payload.trxId || payload.userId || Date.now()}`;
+
+      if (sentKeys.has(idempotencyKey)) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Admin alert already dispatched for this request (idempotent skip).",
+            duplicatePrevented: true,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const htmlContent = renderAdminNewPaymentAlert(payload);
+      const subject = "ChitroKatha — নতুন Subscription Request / New Payment Alert";
+
+      let delivered = false;
+      let provider = "simulation";
+
+      if (resendApiKey) {
+        try {
+          const res = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${resendApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: emailFrom,
+              to: [recipient],
+              subject: subject,
+              html: htmlContent,
+            }),
+          });
+
+          if (res.ok) {
+            delivered = true;
+            provider = "resend";
+            sentKeys.add(idempotencyKey);
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            console.error("Resend API error sending admin alert:", errData);
+          }
+        } catch (sendErr) {
+          console.error("Failed to send admin alert via Resend:", sendErr);
+        }
+      } else {
+        console.log(`[Dev Simulation] Admin new-payment alert queued for ${recipient}`);
+        delivered = true;
+        sentKeys.add(idempotencyKey);
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          delivered,
+          provider,
+          idempotencyKey,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Default: Subscription Confirmation Email to User
     if (!payload.recipientEmail || !payload.recipientEmail.includes("@")) {
       return new Response(
         JSON.stringify({ error: "Invalid recipient email address" }),
@@ -177,9 +403,8 @@ serve(async (req) => {
       );
     }
 
-    // Idempotency check: Prevent duplicate confirmation emails
     const idempotencyKey = payload.idempotencyKey || `${payload.recipientEmail}_${payload.trxId || 'sub'}_${payload.tier || 'vip'}`;
-    if (sentConfirmationKeys.has(idempotencyKey)) {
+    if (sentKeys.has(idempotencyKey)) {
       return new Response(
         JSON.stringify({
           success: true,
@@ -193,9 +418,6 @@ serve(async (req) => {
 
     const htmlContent = renderSubscriptionEmail(payload);
     const subject = "ChitroKatha — Your Subscription is Confirmed / আপনার সাবস্ক্রিপশন নিশ্চিত হয়েছে";
-
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
-    const emailFrom = Deno.env.get("EMAIL_FROM") || "ChitroKatha <security@chitrokatha.online>";
 
     let delivered = false;
     let provider = "simulation";
@@ -219,7 +441,7 @@ serve(async (req) => {
         if (res.ok) {
           delivered = true;
           provider = "resend";
-          sentConfirmationKeys.add(idempotencyKey);
+          sentKeys.add(idempotencyKey);
         } else {
           const errData = await res.json().catch(() => ({}));
           console.error("Resend API error:", errData);
@@ -228,10 +450,9 @@ serve(async (req) => {
         console.error("Failed to send via Resend:", sendErr);
       }
     } else {
-      // Dev / testing mode without live API key
       console.log(`[Dev Simulation] Subscription confirmation email queued for ${payload.recipientEmail}`);
       delivered = true;
-      sentConfirmationKeys.add(idempotencyKey);
+      sentKeys.add(idempotencyKey);
     }
 
     return new Response(

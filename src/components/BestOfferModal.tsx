@@ -1,32 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { X, Crown, Sparkles, Check, Zap, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 
-export const BestOfferModal: React.FC = () => {
+interface BestOfferModalProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export const BestOfferModal: React.FC<BestOfferModalProps> = ({
+  isOpen = false,
+  onClose,
+}) => {
   const { openSubscriptionModal } = useAuth();
   const { language } = useLanguage();
-  const [isOpen, setIsOpen] = useState(false);
-
-  useEffect(() => {
-    // Show popup reliably on every page visit / refresh after a short delay
-    const timer = setTimeout(() => {
-      setIsOpen(true);
-    }, 900);
-
-    return () => clearTimeout(timer);
-  }, []);
 
   if (!isOpen) return null;
 
+  const handleClose = () => {
+    if (onClose) {
+      onClose();
+    }
+  };
+
   const handleClaim = () => {
-    setIsOpen(false);
+    handleClose();
     openSubscriptionModal();
   };
 
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
-      <div className="fixed inset-0" onClick={() => setIsOpen(false)} />
+      <div className="fixed inset-0" onClick={handleClose} />
 
       <div className="relative z-10 w-full max-w-lg bg-gradient-to-b from-[#14121a] via-[#0d0f17] to-[#07080d] border-2 border-amber-500/60 rounded-3xl shadow-2xl p-4 sm:p-8 space-y-6 overflow-y-auto max-h-[92vh]">
         {/* Top Glow Radiance */}
@@ -35,7 +39,7 @@ export const BestOfferModal: React.FC = () => {
 
         {/* Close Button */}
         <button
-          onClick={() => setIsOpen(false)}
+          onClick={handleClose}
           className="absolute top-4 right-4 p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors z-20"
           aria-label="Close offer"
         >
@@ -122,7 +126,7 @@ export const BestOfferModal: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setIsOpen(false)}
+            onClick={handleClose}
             className="w-full py-2 text-slate-400 hover:text-slate-200 text-xs transition-colors"
           >
             পরে দেখব (Maybe Later)

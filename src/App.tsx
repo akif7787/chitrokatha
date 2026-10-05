@@ -26,6 +26,7 @@ import { WatchlistView } from './components/WatchlistView';
 import { FavoritesView } from './components/FavoritesView';
 import { AuthModal } from './components/AuthModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
+import { SubscriptionStatusModal } from './components/SubscriptionStatusModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { MovieRequestModal } from './components/MovieRequestModal';
 import { SupportModal } from './components/SupportModal';
@@ -43,11 +44,13 @@ function ChitroKathaApp() {
   const { t, language } = useLanguage();
   const { isPremium, openSubscriptionModal, requireAuthForPlayback } = useAuth();
 
-  // Theatrical Intro on Load / Refresh
-  const [showIntro, setShowIntro] = useState(true);
+  // Theatrical Intro on Load / Refresh (shortened, runs once per browsing session)
+  const [showIntro, setShowIntro] = useState(() => {
+    return !sessionStorage.getItem('chitrokatha_intro_shown');
+  });
 
-  // Best offer manual trigger
-  const [isBestOfferModalOpen, setIsBestOfferModalOpen] = useState(true);
+  // Best offer modal (manual trigger only, never automatically popped up)
+  const [isBestOfferModalOpen, setIsBestOfferModalOpen] = useState(false);
 
   // Navigation Tabs: 'home' | 'movies' | 'drama' | 'series' | 'watchlist'
   const [activeTab, setActiveTab] = useState<MainTab>('home');
@@ -114,26 +117,7 @@ function ChitroKathaApp() {
     }
   };
 
-  // Welcome / New Release alert on first session visit
-  React.useEffect(() => {
-    const hasShownToast = sessionStorage.getItem('chitrokatha_initial_toast');
-    if (!hasShownToast) {
-      sessionStorage.setItem('chitrokatha_initial_toast', 'true');
-      const timer = setTimeout(() => {
-        showToast({
-          type: 'new_release',
-          titleBn: '🔥 নতুন রিলিজ: তুফান (Toofan)',
-          titleEn: '🔥 New Release: Toofan',
-          messageBn: 'শাকিব খান অভিনীত ব্লকবাস্টার অ্যাকশন থ্রিলার তুফান এখন ৪কে আল্ট্রা এইচডিতে সম্পূর্ণ বিনামূল্যে দেখতে পারবেন!',
-          messageEn: 'Blockbuster action thriller Toofan is now streaming in 4K UHD! Watch now.',
-          movieId: 'movie-toofan-2024',
-          movieTitle: 'তুফান',
-          poster: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=400&q=80',
-        });
-      }, 2200);
-      return () => clearTimeout(timer);
-    }
-  }, [showToast]);
+
 
   // Navigate directly to Home from anywhere on clicking the brand logo
   const handleGoHome = () => {
@@ -209,7 +193,12 @@ function ChitroKathaApp() {
     <div className="min-h-screen bg-[#08090d] text-[#e2e8f0] flex flex-col selection:bg-rose-600 selection:text-white">
       {/* Theatrical Cinematic Intro on Load / Refresh */}
       {showIntro && (
-        <CinematicIntro onComplete={() => setShowIntro(false)} />
+        <CinematicIntro
+          onComplete={() => {
+            sessionStorage.setItem('chitrokatha_intro_shown', 'true');
+            setShowIntro(false);
+          }}
+        />
       )}
 
       {/* 100% Clean OTT Header with Structured Categories */}
@@ -709,6 +698,9 @@ function ChitroKathaApp() {
       {/* ChitroKatha Subscription & Payment Modal */}
       <SubscriptionModal />
 
+      {/* ChitroKatha Dedicated Subscription & Payment Status Modal */}
+      <SubscriptionStatusModal />
+
       {/* User Profile & Details Modal */}
       <UserProfileModal />
 
@@ -718,8 +710,11 @@ function ChitroKathaApp() {
       {/* Instant Admin Support Modal */}
       <SupportModal />
 
-      {/* Best Offer Promo Popup on Load / Refresh */}
-      {isBestOfferModalOpen && <BestOfferModal />}
+      {/* Best Offer Promo Modal (manual trigger from VIP / Offer buttons) */}
+      <BestOfferModal
+        isOpen={isBestOfferModalOpen}
+        onClose={() => setIsBestOfferModalOpen(false)}
+      />
 
       {/* Non-Intrusive Floating Toast Notifications */}
       <NotificationToastContainer onSelectMovieById={handleSelectMovieById} />

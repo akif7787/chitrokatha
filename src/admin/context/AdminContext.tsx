@@ -31,6 +31,12 @@ import {
   initialAdmins
 } from '../data/adminMockData';
 import { useAuth } from '../../context/AuthContext';
+import {
+  getStoredLocalPayments,
+  mapPaymentRequestToAdminPayment,
+  adminApprovePaymentRequest,
+  adminRejectPaymentRequest
+} from '../../services/paymentService';
 
 interface AdminContextType {
   currentRoute: AdminRoute;
@@ -108,8 +114,15 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   };
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Interactive UI Mock Data Stores
-  const [payments, setPayments] = useState<AdminPayment[]>(initialPayments);
+  // Interactive UI Mock Data Stores with real pending payment requests merged
+  const [payments, setPayments] = useState<AdminPayment[]>(() => {
+    const localRequests = getStoredLocalPayments();
+    const mappedLocal = localRequests.map(mapPaymentRequestToAdminPayment);
+    // Merge localRequests avoiding duplicates by id
+    const existingIds = new Set(mappedLocal.map((m) => m.id));
+    const remainingInitial = initialPayments.filter((p) => !existingIds.has(p.id));
+    return [...mappedLocal, ...remainingInitial];
+  });
   const [users, setUsers] = useState<AdminCustomerUser[]>(initialUsers);
   const [plans, setPlans] = useState<AdminSubscriptionPlan[]>(initialSubscriptionPlans);
   const [movies, setMovies] = useState<AdminContentItem[]>(initialMovies);
@@ -153,7 +166,14 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updatePaymentStatus = (id: string, status: PaymentStatus, note?: string) => {
+  const updatePaymentStatus = async (id: string, status: PaymentStatus, note?: string) => {
+    // 1. Trigger backend RPC / local persistence update
+    if (status === 'approved') {
+      await adminApprovePaymentRequest(id, note);
+    } else if (status === 'rejected') {
+      await adminRejectPaymentRequest(id, note);
+    }
+
     setPayments((prev) =>
       prev.map((p) => {
         if (p.id === id) {
@@ -167,7 +187,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
               trxId: p.trxId,
               startDate: new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
               endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
-            });
+            }).catch((err) => console.warn('[SubscriptionEmail] Admin approval email failed:', err));
           }
           return { ...p, status, notes: note || p.notes };
         }

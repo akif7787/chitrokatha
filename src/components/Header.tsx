@@ -22,6 +22,7 @@ import {
   Bell,
   Check,
   Trash2,
+  CreditCard,
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useFavorites } from '../context/FavoritesContext';
@@ -66,6 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
     logout,
     openLoginModal,
     openSubscriptionModal,
+    openSubscriptionStatusModal,
     openProfileModal,
     openRequestModal,
     openSupportModal,
@@ -425,6 +427,15 @@ export const Header: React.FC<HeaderProps> = ({
                     <span>অ্যাডমিনকে মেসেজ / হেল্প</span>
                   </button>
 
+                  {/* Dedicated Subscription & Payment Status */}
+                  <button
+                    onClick={openSubscriptionStatusModal}
+                    className="w-full px-3 py-2 text-left text-xs text-amber-300 hover:bg-white/5 rounded-xl flex items-center gap-2.5 transition-colors font-medium cursor-pointer"
+                  >
+                    <CreditCard className="w-4 h-4 text-amber-400" />
+                    <span>{language === 'bn' ? 'সাবস্ক্রিপশন ও পেমেন্ট স্ট্যাটাস' : 'Subscription & Payment Status'}</span>
+                  </button>
+
                   {/* Subscription info */}
                   <button
                     onClick={openSubscriptionModal}
@@ -659,6 +670,21 @@ export const Header: React.FC<HeaderProps> = ({
                       <span>{language === 'bn' ? 'মুভি ও নাটক রিকোয়েস্ট' : 'Request Movie / Drama'}</span>
                     </button>
 
+                    {/* Subscription & Payment Status */}
+                    {isLoggedIn && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileMoreOpen(false);
+                          openSubscriptionStatusModal();
+                        }}
+                        className="w-full px-3 py-2 text-left text-xs text-amber-300 hover:bg-white/5 rounded-xl flex items-center gap-2.5 transition-colors font-medium cursor-pointer"
+                      >
+                        <CreditCard className="w-4 h-4 text-amber-400" />
+                        <span>{language === 'bn' ? 'সাবস্ক্রিপশন ও পেমেন্ট স্ট্যাটাস' : 'Subscription & Payment Status'}</span>
+                      </button>
+                    )}
+
                     {/* Help & Support */}
                     <button
                       type="button"
@@ -831,6 +857,15 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <MessageSquare className="w-4 h-4 text-amber-400" />
                     <span>অ্যাডমিনকে মেসেজ / হেল্প</span>
+                  </button>
+
+                  {/* Subscription & Payment Status */}
+                  <button
+                    onClick={openSubscriptionStatusModal}
+                    className="w-full px-3 py-2 text-left text-xs text-amber-300 hover:bg-white/5 rounded-xl flex items-center gap-2.5 transition-colors font-medium cursor-pointer"
+                  >
+                    <CreditCard className="w-4 h-4 text-amber-400" />
+                    <span>{language === 'bn' ? 'সাবস্ক্রিপশন ও পেমেন্ট স্ট্যাটাস' : 'Subscription & Payment Status'}</span>
                   </button>
 
                   <button

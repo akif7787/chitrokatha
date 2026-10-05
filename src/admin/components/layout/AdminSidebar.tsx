@@ -18,7 +18,8 @@ import {
   ExternalLink,
   Layers,
   Award,
-  DollarSign
+  DollarSign,
+  MessageSquare
 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { AdminRoute } from '../../types/adminTypes';
@@ -93,10 +94,16 @@ export const AdminSidebar: React.FC = () => {
       ]
     },
     {
+      title: 'COMMUNICATION & SUPPORT',
+      items: [
+        { label: 'Support Messages', route: '/admin/support', icon: <MessageSquare className="w-4 h-4" /> },
+        { label: 'Notifications', route: '/admin/notifications', icon: <Bell className="w-4 h-4" /> }
+      ]
+    },
+    {
       title: 'MARKETING',
       items: [
-        { label: 'Advertisements', route: '/admin/ads', icon: <Megaphone className="w-4 h-4" /> },
-        { label: 'Notifications', route: '/admin/notifications', icon: <Bell className="w-4 h-4" /> }
+        { label: 'Advertisements', route: '/admin/ads', icon: <Megaphone className="w-4 h-4" /> }
       ]
     },
     {

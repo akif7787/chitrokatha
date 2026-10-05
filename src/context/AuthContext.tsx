@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { UserProfile, SubscriptionTier, PaymentRequest, MovieRequest, SupportTicket } from '../types/user';
 import { Profile, UserRole } from '../types/database';
 import { dispatchAppNotification } from './NotificationContext';
-import { isSupabaseConfigured } from '../lib/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { sendSubscriptionConfirmationEmail } from '../services/subscriptionEmailService';
 import {
   signUp,
@@ -23,6 +23,14 @@ import {
   requestLoginOtp
 } from '../services/authService';
 import { getProfile, updateProfile } from '../services/profileService';
+import {
+  submitPaymentRequest,
+  getStoredLocalPayments,
+  fetchUserActiveSubscription,
+  fetchUserLatestPayment,
+  PAYMENT_STATUS_EVENT
+} from '../services/paymentService';
+import { submitSupportMessage } from '../services/supportService';
 import { User, Session } from '@supabase/supabase-js';
 
 export interface PendingAuth {
@@ -111,18 +119,23 @@ interface AuthContextType {
   isRecoverySession?: boolean;
   isSubscriptionModalOpen: boolean;
   setIsSubscriptionModalOpen: (open: boolean) => void;
+  isSubscriptionStatusModalOpen: boolean;
+  setIsSubscriptionStatusModalOpen: (open: boolean) => void;
   isProfileModalOpen: boolean;
   setIsProfileModalOpen: (open: boolean) => void;
   isRequestModalOpen: boolean;
   setIsRequestModalOpen: (open: boolean) => void;
   isSupportModalOpen: boolean;
   setIsSupportModalOpen: (open: boolean) => void;
+  latestPayment: PaymentRequest | null;
+  refreshSubscriptionStatus: () => Promise<void>;
 
   // Modal triggers
   openLoginModal: (message?: string | React.MouseEvent<unknown> | unknown) => void;
   openRegisterModal: (message?: string | React.MouseEvent<unknown> | unknown) => void;
   requireAuthForPlayback: (onAllowed?: () => void) => boolean;
   openSubscriptionModal: () => void;
+  openSubscriptionStatusModal: () => void;
   openProfileModal: () => void;
   openRequestModal: () => void;
   openSupportModal: () => void;
@@ -176,9 +189,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [isRecoverySession, setIsRecoverySession] = useState<boolean>(false);
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [isSubscriptionStatusModalOpen, setIsSubscriptionStatusModalOpen] = useState(false);
+  const [pendingSubscriptionOpen, setPendingSubscriptionOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+  const [latestPayment, setLatestPayment] = useState<PaymentRequest | null>(null);
 
   // 2-Step OTP Authentication State
   const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null);
@@ -194,6 +210,79 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthError(null);
   }, [pendingAuth]);
 
+  // Synchronize database subscription & payment requests
+  const syncSubscriptionAndPayments = useCallback(async (userId: string) => {
+    if (!userId) return;
+
+    try {
+      const [activeSub, latestPay] = await Promise.all([
+        fetchUserActiveSubscription(userId),
+        fetchUserLatestPayment(userId),
+      ]);
+
+      if (latestPay) {
+        setLatestPayment(latestPay);
+      }
+
+      setUser((prev) => {
+        if (!prev || prev.id !== userId) return prev;
+
+        let updatedTier = prev.tier;
+        let updatedEndDate = prev.subscriptionEndDate;
+        let updatedPending = prev.pendingSubscription;
+
+        if (activeSub?.hasActiveSubscription && activeSub.tier) {
+          updatedTier = activeSub.tier;
+          updatedEndDate = activeSub.endDate;
+        }
+
+        if (latestPay) {
+          if (latestPay.status === 'pending') {
+            updatedPending = latestPay;
+          } else if (latestPay.status === 'approved') {
+            updatedPending = undefined;
+            if (!activeSub?.hasActiveSubscription) {
+              updatedTier = latestPay.plan;
+              updatedEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+            }
+          } else if (latestPay.status === 'rejected') {
+            updatedPending = undefined;
+          }
+        } else {
+          const localList = getStoredLocalPayments();
+          const localPay = localList.find((p) => p.userId === userId || p.userEmail === prev.email);
+          if (localPay?.status === 'pending') {
+            updatedPending = localPay;
+          } else if (localPay?.status === 'approved' || localPay?.status === 'rejected') {
+            updatedPending = undefined;
+          }
+        }
+
+        if (
+          updatedTier !== prev.tier ||
+          updatedEndDate !== prev.subscriptionEndDate ||
+          updatedPending !== prev.pendingSubscription
+        ) {
+          return {
+            ...prev,
+            tier: updatedTier,
+            subscriptionEndDate: updatedEndDate,
+            pendingSubscription: updatedPending,
+          };
+        }
+        return prev;
+      });
+    } catch (err) {
+      console.warn('[AuthContext] syncSubscriptionAndPayments error:', err);
+    }
+  }, []);
+
+  const refreshSubscriptionStatus = useCallback(async () => {
+    if (user?.id) {
+      await syncSubscriptionAndPayments(user.id);
+    }
+  }, [user?.id, syncSubscriptionAndPayments]);
+
   // Synchronize Supabase User Profile
   const syncProfile = useCallback(async (sUser: User | null) => {
     if (!sUser) {
@@ -206,7 +295,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setSupabaseUser(sUser);
-    const dbProfile = await getProfile(sUser.id);
+
+    // Query active subscription and latest payment from database
+    const [dbProfile, activeSub, latestPay] = await Promise.all([
+      getProfile(sUser.id),
+      fetchUserActiveSubscription(sUser.id),
+      fetchUserLatestPayment(sUser.id),
+    ]);
+
+    if (latestPay) {
+      setLatestPayment(latestPay);
+    }
+
+    // Restore any pending payment request for this user
+    const pendingList = getStoredLocalPayments();
+    const activePending = pendingList.find(
+      (p) => (p.userId === sUser.id || p.userEmail === sUser.email) && p.status === 'pending'
+    );
+
+    let initialTier: SubscriptionTier = 'free';
+    let initialEndDate: string | undefined = undefined;
+    let initialPending: PaymentRequest | undefined = undefined;
+
+    if (activeSub?.hasActiveSubscription && activeSub.tier) {
+      initialTier = activeSub.tier;
+      initialEndDate = activeSub.endDate;
+    }
+
+    if (latestPay) {
+      if (latestPay.status === 'pending') {
+        initialPending = latestPay;
+      } else if (latestPay.status === 'approved') {
+        initialPending = undefined;
+        if (!activeSub?.hasActiveSubscription) {
+          initialTier = latestPay.plan;
+          initialEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        }
+      }
+    } else if (activePending) {
+      initialPending = activePending;
+    }
+
     if (dbProfile) {
       setProfile(dbProfile);
       const mappedUser: UserProfile = {
@@ -219,8 +348,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(
             dbProfile.full_name || sUser.email || 'user'
           )}`,
-        tier: user?.tier || 'free',
-        subscriptionEndDate: user?.subscriptionEndDate,
+        tier: initialTier,
+        subscriptionEndDate: initialEndDate,
+        pendingSubscription: initialPending,
         joinedAt: dbProfile.created_at,
         role: dbProfile.role,
         status: dbProfile.status
@@ -239,14 +369,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: sUser.email || '',
         phone: sUser.user_metadata?.phone,
         avatar: metaAvatar,
-        tier: user?.tier || 'free',
+        tier: initialTier,
+        subscriptionEndDate: initialEndDate,
+        pendingSubscription: initialPending,
         joinedAt: sUser.created_at,
         role: 'user',
         status: 'active'
       };
       setUser(mappedUser);
     }
-  }, [user?.tier, user?.subscriptionEndDate]);
+  }, []);
 
   // Initialize Session on App Mount
   useEffect(() => {
@@ -413,6 +545,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [supportTickets]);
 
   // ----------------------------------------------------------------------------
+  // Realtime & Live Synchronization of Payment Requests and Subscription Status
+  // ----------------------------------------------------------------------------
+  useEffect(() => {
+    const currentUserId = user?.id;
+    if (!currentUserId) return;
+
+    // 1. Initial live check against Supabase
+    syncSubscriptionAndPayments(currentUserId);
+
+    // 2. Supabase Realtime channel on payment_requests & user_subscriptions
+    let channel: any = null;
+    if (isSupabaseConfigured()) {
+      channel = supabase
+        .channel(`user_sub_changes_${currentUserId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'payment_requests',
+            filter: `user_id=eq.${currentUserId}`
+          },
+          () => {
+            syncSubscriptionAndPayments(currentUserId);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'user_subscriptions',
+            filter: `user_id=eq.${currentUserId}`
+          },
+          () => {
+            syncSubscriptionAndPayments(currentUserId);
+          }
+        )
+        .subscribe();
+    }
+
+    // 3. Local custom event for instant same-browser updates (e.g. Admin in another tab or same window)
+    const handlePaymentEvent = () => {
+      syncSubscriptionAndPayments(currentUserId);
+    };
+    window.addEventListener(PAYMENT_STATUS_EVENT, handlePaymentEvent);
+    window.addEventListener('storage', handlePaymentEvent);
+
+    // 4. Window focus / visibility change
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncSubscriptionAndPayments(currentUserId);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // 5. Gentle polling while a payment is pending
+    let interval: any = null;
+    if (user?.pendingSubscription) {
+      interval = setInterval(() => {
+        syncSubscriptionAndPayments(currentUserId);
+      }, 7000);
+    }
+
+    return () => {
+      if (channel) channel.unsubscribe();
+      window.removeEventListener(PAYMENT_STATUS_EVENT, handlePaymentEvent);
+      window.removeEventListener('storage', handlePaymentEvent);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (interval) clearInterval(interval);
+    };
+  }, [user?.id, Boolean(user?.pendingSubscription), syncSubscriptionAndPayments]);
+
+  // ----------------------------------------------------------------------------
   // Step 1: Sign Up -> Triggers OTP step
   // ----------------------------------------------------------------------------
   const signUpUser = async (email: string, password: string, fullName: string, phone?: string) => {
@@ -501,6 +707,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await syncProfile(res.data.user);
         setPendingAuth(null);
         setIsAuthModalOpen(false);
+        if (pendingSubscriptionOpen) {
+          setPendingSubscriptionOpen(false);
+          setIsSubscriptionModalOpen(true);
+        }
         dispatchAppNotification({
           type: 'system',
           titleBn: '🎉 অ্যাকাউন্ট সক্রিয় হয়েছে!',
@@ -527,6 +737,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setPendingAuth(null);
       setIsAuthModalOpen(false);
+      if (pendingSubscriptionOpen) {
+        setPendingSubscriptionOpen(false);
+        setIsSubscriptionModalOpen(true);
+      }
       dispatchAppNotification({
         type: 'system',
         titleBn: '👋 স্বাগতম!',
@@ -652,6 +866,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setUser(p);
     setIsAuthModalOpen(false);
+    if (pendingSubscriptionOpen) {
+      setPendingSubscriptionOpen(false);
+      setIsSubscriptionModalOpen(true);
+    }
   };
 
   const register = (name: string, email: string, phone?: string) => {
@@ -668,6 +886,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setUser(p);
     setIsAuthModalOpen(false);
+    if (pendingSubscriptionOpen) {
+      setPendingSubscriptionOpen(false);
+      setIsSubscriptionModalOpen(true);
+    }
   };
 
   const logout = () => {
@@ -696,46 +918,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Subscription & Payment flows
-  const submitSubscriptionPayment = (
+  const submitSubscriptionPayment = async (
     plan: SubscriptionTier,
     amount: number,
     trxId: string,
     senderPhone: string,
     method: 'bkash' | 'nagad' | 'rocket' | 'upay'
   ) => {
-    const request: PaymentRequest = {
-      id: `pay_${Date.now()}`,
-      userId: user?.id || `guest_${Date.now()}`,
-      userName: user?.name || 'দর্শক',
-      userEmail: user?.email || 'user@chitrokatha.com',
-      userPhone: user?.phone || senderPhone,
+    if (!isLoggedIn || !user) {
+      openSubscriptionModal();
+      return;
+    }
+
+    const res = await submitPaymentRequest({
+      userId: user.id,
+      userName: user.name,
+      userEmail: user.email,
+      userPhone: user.phone || senderPhone,
       plan,
       amount,
       method,
       senderPhone,
-      trxId: trxId.trim().toUpperCase(),
-      status: 'pending',
-      submittedAt: new Date().toISOString()
-    };
+      trxId
+    });
 
-    if (user) {
-      setUser({
-        ...user,
-        pendingSubscription: request
+    if (!res.success || !res.data) {
+      dispatchAppNotification({
+        type: 'system',
+        titleBn: '❌ পেমেন্ট রিকোয়েস্ট ব্যর্থ',
+        titleEn: '❌ Payment Submission Failed',
+        messageBn: res.error || 'পেমেন্ট রিকোয়েস্ট জমা দেওয়া সম্ভব হয়নি।',
+        messageEn: res.error || 'Unable to submit payment request.'
       });
-    } else {
-      const guestProfile: UserProfile = {
-        id: request.userId,
-        name: request.userName,
-        email: request.userEmail,
-        phone: senderPhone,
-        avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(senderPhone)}`,
-        tier: 'free',
-        joinedAt: new Date().toISOString(),
-        pendingSubscription: request
-      };
-      setUser(guestProfile);
+      return;
     }
+
+    const request = res.data;
+    setUser({
+      ...user,
+      pendingSubscription: request
+    });
 
     dispatchAppNotification({
       type: 'system',
@@ -746,37 +968,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  // Security: Client-side self-activation is strictly disabled.
+  // Subscriptions can only be activated by an Administrator via the Admin Panel or secure RPC.
   const approvePendingSubscription = () => {
-    if (!user?.pendingSubscription) return;
-    const plan = user.pendingSubscription.plan;
-    const updatedUser = {
-      ...user,
-      tier: plan,
-      subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      pendingSubscription: undefined
-    };
-    setUser(updatedUser);
-
-    if (user.email) {
-      sendSubscriptionConfirmationEmail({
-        recipientEmail: user.email,
-        recipientName: user.name,
-        planName: plan.toUpperCase() === 'VIP' ? 'ChitroKatha VIP All-Access Pass' : 'ChitroKatha Standard Pass',
-        tier: plan,
-        amount: user.pendingSubscription.amount,
-        trxId: user.pendingSubscription.trxId,
-        startDate: new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
-      }).catch((err) => console.warn('[SubscriptionEmail] Failed to send email:', err));
-    }
-
-    dispatchAppNotification({
-      type: 'system',
-      titleBn: '🎉 ভিআইপি মেম্বারশিপ সক্রিয় হয়েছে!',
-      titleEn: '🎉 VIP Membership Activated!',
-      messageBn: 'অভিনন্দন! আপনার ভিআইপি মেম্বারশিপ সক্রিয় হয়েছে। এখন সমস্ত বিজ্ঞাপন ছাড়া ৪কে আল্ট্রা এইচডি কোয়ালিটিতে সিনেমা ও নাটক উপভোগ করুন!',
-      messageEn: 'Congratulations! Your VIP Subscription is active. Enjoy 100% ad-free streaming in 4K UHD!'
-    });
+    console.warn('[Security] Client-side approval is disabled. Payment approvals must be performed by an Admin in the Admin Console.');
   };
 
   const cancelPendingSubscription = () => {
@@ -787,38 +982,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const upgradeSubscription = (tier: SubscriptionTier) => {
-    if (!user) return;
-    const updatedUser = {
-      ...user,
-      tier,
-      subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      pendingSubscription: undefined,
-      isPaused: false,
-      pausedUntil: undefined,
-      pauseDays: undefined
-    };
-    setUser(updatedUser);
-
-    if (user.email) {
-      sendSubscriptionConfirmationEmail({
-        recipientEmail: user.email,
-        recipientName: user.name,
-        planName: tier === 'vip' ? 'ChitroKatha VIP All-Access Pass' : 'ChitroKatha Standard Pass',
-        tier,
-        amount: tier === 'vip' ? 99 : 49,
-        startDate: new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
-      }).catch((err) => console.warn('[SubscriptionEmail] Failed to send email:', err));
-    }
-
-    dispatchAppNotification({
-      type: 'system',
-      titleBn: '🎉 ভিআইপি মেম্বারশিপ সক্রিয় হয়েছে!',
-      titleEn: '🎉 VIP Membership Activated!',
-      messageBn: `অভিনন্দন! আপনার ${tier === 'vip' ? 'ভিআইপি' : 'প্রিমিয়াম'} সাবস্ক্রিপশন সক্রিয় হয়েছে। এখন ১০০% বিজ্ঞাপনমুক্ত উপভোগ করুন!`,
-      messageEn: `Congratulations! Your ${tier.toUpperCase()} subscription is active. Enjoy 100% ad-free streaming!`
-    });
+  const upgradeSubscription = (_tier: SubscriptionTier) => {
+    console.warn('[Security] Direct client-side subscription upgrade is disabled. Please submit a payment request for admin verification.');
   };
 
   const cancelSubscription = (reason?: string) => {
@@ -928,6 +1093,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date().toISOString()
     };
     setSupportTickets((prev) => [newTicket, ...prev]);
+
+    // Submit to Supabase support_messages table & broadcast for Admin Panel
+    submitSupportMessage({
+      userId: user?.id,
+      userName: user?.name || 'দর্শক',
+      userEmail: user?.email || 'guest@chitrokatha.online',
+      userPhone: user?.phone,
+      subject: subject.trim(),
+      category,
+      message: message.trim(),
+    }).catch((err) => console.warn('[AuthContext] submitSupportMessage error:', err));
   };
 
   const isPremium = (user?.tier === 'standard' || user?.tier === 'vip') && !user?.isPaused;
@@ -973,6 +1149,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     openLoginModal('ভিডিও দেখতে আগে একটি অ্যাকাউন্ট তৈরি করুন বা লগ ইন করুন। (Please create an account or log in to watch this video.)');
     return false;
   }, [isLoggedIn, openLoginModal]);
+
+  const openSubscriptionModal = useCallback(() => {
+    if (!isLoggedIn) {
+      setAuthError(null);
+      setAuthMessage('সাবস্ক্রিপশন নিতে অনুগ্রহ করে প্রথমে আপনার অ্যাকাউন্টে লগইন করুন। (Please sign in to your account first before subscribing.)');
+      setAuthModalMode('login');
+      setPendingSubscriptionOpen(true);
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setIsSubscriptionModalOpen(true);
+  }, [isLoggedIn]);
 
   return (
     <AuthContext.Provider
@@ -1023,16 +1211,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isRecoverySession,
         isSubscriptionModalOpen,
         setIsSubscriptionModalOpen,
+        isSubscriptionStatusModalOpen,
+        setIsSubscriptionStatusModalOpen,
         isProfileModalOpen,
         setIsProfileModalOpen,
         isRequestModalOpen,
         setIsRequestModalOpen,
         isSupportModalOpen,
         setIsSupportModalOpen,
+        latestPayment,
+        refreshSubscriptionStatus,
         openLoginModal,
         openRegisterModal,
         requireAuthForPlayback,
-        openSubscriptionModal: () => setIsSubscriptionModalOpen(true),
+        openSubscriptionModal,
+        openSubscriptionStatusModal: () => setIsSubscriptionStatusModalOpen(true),
         openProfileModal: () => setIsProfileModalOpen(true),
         openRequestModal: () => setIsRequestModalOpen(true),
         openSupportModal: () => setIsSupportModalOpen(true)

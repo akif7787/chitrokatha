@@ -1,0 +1,329 @@
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { PaymentRequest, SubscriptionTier } from '../types/user';
+import { AdminPayment, PaymentStatus, PaymentMethod } from '../admin/types/adminTypes';
+import { sendAdminNewPaymentAlert } from './subscriptionEmailService';
+
+const STORED_PAYMENTS_KEY = 'chitrokatha_payment_requests_v1';
+export const PAYMENT_STATUS_EVENT = 'chitrokatha_payment_status_changed';
+
+export function notifyPaymentStatusChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PAYMENT_STATUS_EVENT));
+  }
+}
+
+export function getStoredLocalPayments(): PaymentRequest[] {
+  try {
+    const raw = localStorage.getItem(STORED_PAYMENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveStoredLocalPayments(payments: PaymentRequest[]): void {
+  try {
+    localStorage.setItem(STORED_PAYMENTS_KEY, JSON.stringify(payments));
+    notifyPaymentStatusChanged();
+  } catch {}
+}
+
+export async function submitPaymentRequest(params: {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userPhone: string;
+  plan: SubscriptionTier;
+  amount: number;
+  method: 'bkash' | 'nagad' | 'rocket' | 'upay';
+  senderPhone: string;
+  trxId: string;
+}): Promise<{ success: boolean; data?: PaymentRequest; error?: string }> {
+  const cleanTrxId = params.trxId.trim().toUpperCase();
+
+  // Validate duplicate pending submissions with same TrxID
+  const localList = getStoredLocalPayments();
+  const existingPending = localList.find(
+    (p) => p.status === 'pending' && (p.trxId === cleanTrxId || (p.userId === params.userId && p.plan === params.plan))
+  );
+
+  if (existingPending) {
+    return {
+      success: false,
+      error: 'এই ট্রানজেকশন আইডি বা প্ল্যানের জন্য ইতোমধ্যে একটি রিকোয়েস্ট যাচাইাধীন রয়েছে। (A request is already pending verification.)'
+    };
+  }
+
+  const newRequest: PaymentRequest = {
+    id: `pay_${Date.now()}`,
+    userId: params.userId,
+    userName: params.userName,
+    userEmail: params.userEmail,
+    userPhone: params.userPhone,
+    plan: params.plan,
+    amount: params.amount,
+    method: params.method,
+    senderPhone: params.senderPhone.trim(),
+    trxId: cleanTrxId,
+    status: 'pending',
+    submittedAt: new Date().toISOString()
+  };
+
+  // 1. If Supabase is connected, attempt remote insert with strict RLS (status must be 'pending')
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await (supabase.from('payment_requests') as any).insert({
+        user_id: params.userId,
+        user_email: params.userEmail,
+        user_name: params.userName,
+        user_phone: params.userPhone,
+        plan: params.plan,
+        amount: params.amount,
+        method: params.method,
+        sender_phone: params.senderPhone.trim(),
+        trx_id: cleanTrxId,
+        status: 'pending'
+      }).select().single();
+
+      if (!error && data) {
+        newRequest.id = data.id;
+      } else if (error) {
+        console.warn('[PaymentService] Remote save notice, using local sync fallback:', error.message);
+      }
+    } catch (err: any) {
+      console.warn('[PaymentService] Unexpected remote save error:', err?.message);
+    }
+  }
+
+  // 2. Persist locally
+  saveStoredLocalPayments([newRequest, ...localList]);
+
+  // 3. Dispatch server-side admin alert email
+  sendAdminNewPaymentAlert({
+    userId: params.userId,
+    userName: params.userName,
+    userEmail: params.userEmail,
+    userPhone: params.userPhone,
+    plan: params.plan,
+    amount: params.amount,
+    method: params.method,
+    senderPhone: params.senderPhone,
+    trxId: cleanTrxId,
+    submittedAt: newRequest.submittedAt,
+  }).catch((err) => console.warn('[PaymentService] Admin alert dispatch notice:', err));
+
+  return { success: true, data: newRequest };
+}
+
+export function mapPaymentRequestToAdminPayment(req: PaymentRequest): AdminPayment {
+  return {
+    id: req.id,
+    trxId: req.trxId,
+    userName: req.userName,
+    userEmail: req.userEmail,
+    userPhone: req.userPhone || req.senderPhone,
+    userAvatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(req.userName || req.userEmail)}`,
+    planName: req.plan === 'vip' ? '365 Days Annual VIP' : '30 Days Standard',
+    amount: req.amount,
+    method: req.method as PaymentMethod,
+    senderPhone: req.senderPhone,
+    date: req.submittedAt ? new Date(req.submittedAt).toLocaleDateString('bn-BD') : 'Just Now',
+    status: req.status as PaymentStatus
+  };
+}
+
+export async function fetchUserActiveSubscription(userId: string): Promise<{
+  hasActiveSubscription: boolean;
+  tier?: SubscriptionTier;
+  startDate?: string;
+  endDate?: string;
+  status?: string;
+} | null> {
+  if (!isSupabaseConfigured() || !userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('user_subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[PaymentService] Error fetching user subscription:', error.message);
+      return null;
+    }
+
+    if (data && data.status === 'active') {
+      return {
+        hasActiveSubscription: true,
+        tier: data.tier as SubscriptionTier,
+        startDate: data.start_date,
+        endDate: data.end_date,
+        status: data.status,
+      };
+    }
+    return {
+      hasActiveSubscription: false,
+      tier: (data?.tier as SubscriptionTier) || 'free',
+      startDate: data?.start_date,
+      endDate: data?.end_date,
+      status: data?.status || 'inactive',
+    };
+  } catch (err: any) {
+    console.warn('[PaymentService] Fetch active subscription error:', err?.message);
+    return null;
+  }
+}
+
+export async function fetchUserLatestPayment(userId: string): Promise<PaymentRequest | null> {
+  if (!userId) return null;
+
+  // 1. Try remote Supabase
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase
+        .from('payment_requests')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data) {
+        return {
+          id: data.id,
+          userId: data.user_id,
+          userName: data.user_name,
+          userEmail: data.user_email,
+          userPhone: data.user_phone || '',
+          plan: data.plan as SubscriptionTier,
+          amount: Number(data.amount),
+          method: data.method as 'bkash' | 'nagad' | 'rocket' | 'upay',
+          senderPhone: data.sender_phone,
+          trxId: data.trx_id,
+          status: data.status as 'pending' | 'approved' | 'rejected',
+          submittedAt: data.created_at,
+        };
+      }
+    } catch (err: any) {
+      console.warn('[PaymentService] Error fetching user latest payment from Supabase:', err?.message);
+    }
+  }
+
+  // 2. Fallback to local store
+  const localList = getStoredLocalPayments();
+  const found = localList.find((p) => p.userId === userId);
+  return found || null;
+}
+
+export async function fetchUserAllPayments(userId: string): Promise<PaymentRequest[]> {
+  if (!userId) return [];
+
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase
+        .from('payment_requests')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        return data.map((d: any) => ({
+          id: d.id,
+          userId: d.user_id,
+          userName: d.user_name,
+          userEmail: d.user_email,
+          userPhone: d.user_phone || '',
+          plan: d.plan as SubscriptionTier,
+          amount: Number(d.amount),
+          method: d.method as 'bkash' | 'nagad' | 'rocket' | 'upay',
+          senderPhone: d.sender_phone,
+          trxId: d.trx_id,
+          status: d.status as 'pending' | 'approved' | 'rejected',
+          submittedAt: d.created_at,
+        }));
+      }
+    } catch (err: any) {
+      console.warn('[PaymentService] Error fetching user all payments:', err?.message);
+    }
+  }
+
+  const localList = getStoredLocalPayments();
+  return localList.filter((p) => p.userId === userId);
+}
+
+export async function adminApprovePaymentRequest(
+  paymentId: string,
+  note?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase.rpc('admin_approve_payment', {
+        target_payment_id: paymentId,
+        admin_note: note || 'Payment verified by admin'
+      });
+      if (error) {
+        console.warn('[PaymentService] admin_approve_payment RPC warning:', error.message);
+      } else if (data && !data.success) {
+        return { success: false, error: data.error };
+      }
+    } catch (err: any) {
+      console.warn('[PaymentService] admin_approve_payment error:', err?.message);
+    }
+  }
+
+  // Update in local store
+  const localList = getStoredLocalPayments();
+  const targetReq = localList.find((p) => p.id === paymentId);
+  const updated = localList.map((p) =>
+    p.id === paymentId ? { ...p, status: 'approved' as const } : p
+  );
+  saveStoredLocalPayments(updated);
+
+  // If the approved payment corresponds to currently active user profile in localStorage, activate their tier
+  try {
+    const rawUser = localStorage.getItem('chitrokatha_user_profile_v2');
+    if (rawUser && targetReq) {
+      const parsedUser = JSON.parse(rawUser);
+      if (parsedUser.id === targetReq.userId || parsedUser.email === targetReq.userEmail) {
+        parsedUser.tier = targetReq.plan;
+        parsedUser.subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        parsedUser.pendingSubscription = undefined;
+        localStorage.setItem('chitrokatha_user_profile_v2', JSON.stringify(parsedUser));
+      }
+    }
+  } catch {}
+
+  notifyPaymentStatusChanged();
+  return { success: true };
+}
+
+export async function adminRejectPaymentRequest(
+  paymentId: string,
+  note?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase.rpc('admin_reject_payment', {
+        target_payment_id: paymentId,
+        admin_note: note || 'Payment rejected by admin'
+      });
+      if (error) {
+        console.warn('[PaymentService] admin_reject_payment RPC warning:', error.message);
+      } else if (data && !data.success) {
+        return { success: false, error: data.error };
+      }
+    } catch (err: any) {
+      console.warn('[PaymentService] admin_reject_payment error:', err?.message);
+    }
+  }
+
+  // Update in local store
+  const localList = getStoredLocalPayments();
+  const updated = localList.map((p) =>
+    p.id === paymentId ? { ...p, status: 'rejected' as const } : p
+  );
+  saveStoredLocalPayments(updated);
+  notifyPaymentStatusChanged();
+
+  return { success: true };
+}

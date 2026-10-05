@@ -34,10 +34,11 @@ export const SubscriptionModal: React.FC = () => {
   const {
     isSubscriptionModalOpen,
     setIsSubscriptionModalOpen,
+    isLoggedIn,
     user,
+    openLoginModal,
+    openSubscriptionStatusModal,
     submitSubscriptionPayment,
-    approvePendingSubscription,
-    upgradeSubscription,
   } = useAuth();
   const { language } = useLanguage();
 
@@ -58,6 +59,12 @@ export const SubscriptionModal: React.FC = () => {
 
   if (!isSubscriptionModalOpen) return null;
 
+  if (!isLoggedIn) {
+    setIsSubscriptionModalOpen(false);
+    openLoginModal('সাবস্ক্রিপশন নিতে অনুগ্রহ করে প্রথমে আপনার অ্যাকাউন্টে লগইন করুন। (Please sign in to your account first before subscribing.)');
+    return null;
+  }
+
   const handleCopyNumber = () => {
     navigator.clipboard.writeText(PAYMENT_NUMBER);
     setCopied(true);
@@ -66,6 +73,11 @@ export const SubscriptionModal: React.FC = () => {
 
   // Step 1: User picks plan -> transitions to payment step where coupon code option appears
   const handleSelectPlan = (chosen: SubscriptionTier) => {
+    if (user?.pendingSubscription) {
+      setIsSubscriptionModalOpen(false);
+      openSubscriptionStatusModal();
+      return;
+    }
     setSelectedTier(chosen);
     setPaymentStep('sendmoney');
   };
@@ -130,44 +142,26 @@ export const SubscriptionModal: React.FC = () => {
     setCouponSuccess(null);
   };
 
-  // Instant free VIP activation when 100% coupon applied
-  const handleInstantFreeActivation = () => {
-    upgradeSubscription(selectedTier);
-
-    // Send confirmation email securely
-    if (user?.email) {
-      sendSubscriptionConfirmationEmail({
-        recipientEmail: user.email,
-        recipientName: user.name,
-        planName: selectedTier === 'vip' ? 'ChitroKatha VIP All-Access Pass (১০০% ফ্রি প্রোমো)' : 'ChitroKatha Standard Pass',
-        tier: selectedTier,
-        amount: 0,
-        trxId: appliedCoupon?.code ? `COUPON-${appliedCoupon.code}` : undefined,
-        startDate: new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
-      });
-    }
-
-    closeModal();
-  };
-
   const handleSubmitTrx = (e: React.FormEvent) => {
     e.preventDefault();
-    if (getFinalAmount() === 0) {
-      handleInstantFreeActivation();
-      return;
-    }
 
-    if (!senderPhone.trim()) {
+    const isFreePromo = getFinalAmount() === 0;
+
+    if (!isFreePromo && !senderPhone.trim()) {
       alert(language === 'bn' ? 'দয়া করে প্রেরক মোবাইল নম্বর দিন' : 'Please provide sender phone');
       return;
     }
-    if (!trxId.trim()) {
+    if (!isFreePromo && !trxId.trim()) {
       alert(language === 'bn' ? 'দয়া করে ট্রানজেকশন আইডি (TrxID) লিখুন' : 'Please provide TrxID');
       return;
     }
 
-    submitSubscriptionPayment(selectedTier, getFinalAmount(), trxId, senderPhone, selectedMethod);
+    const effectiveTrxId = isFreePromo
+      ? `PROMO-${appliedCoupon?.code || '100FREE'}-${Date.now().toString().slice(-4)}`
+      : trxId.trim();
+    const effectivePhone = senderPhone.trim() || user?.phone || 'PROMO-USER';
+
+    submitSubscriptionPayment(selectedTier, getFinalAmount(), effectiveTrxId, effectivePhone, selectedMethod);
     setPaymentStep('pending_confirmation');
   };
 
@@ -225,17 +219,84 @@ export const SubscriptionModal: React.FC = () => {
           /* Step 1: Clean Plan Selection (Coupon appears next)   */
           /* ==================================================== */
           <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Pending Payment Verification Banner */}
+            {user?.pendingSubscription && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-amber-300">
+                      {language === 'bn' ? 'পেমেন্ট ভেরিফিকেশন যাচাইাধীন' : 'Payment Verification Pending'}
+                    </p>
+                    <p className="text-[11px] text-zinc-300 mt-0.5">
+                      TrxID: <span className="text-white font-mono font-bold">{user.pendingSubscription.trxId}</span> ({user.pendingSubscription.plan.toUpperCase()}) — {language === 'bn' ? 'অ্যাডমিন টিম দ্রুত যাচাই করে অ্যাক্টিভেট করবেন।' : 'Our admin team is reviewing your transaction.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSubscriptionModalOpen(false);
+                    openSubscriptionStatusModal();
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-md transition-all shrink-0 cursor-pointer"
+                >
+                  {language === 'bn' ? 'স্ট্যাটাস দেখুন' : 'View Status'}
+                </button>
+              </div>
+            )}
+
+            {/* Active Subscription Banner */}
+            {user && (user.tier === 'vip' || user.tier === 'standard') && !user.pendingSubscription && (
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-rose-500/10 to-transparent border border-amber-500/30 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Crown className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-white flex items-center gap-2">
+                      <span>{language === 'bn' ? 'বর্তমান প্ল্যান:' : 'Current Plan:'} {user.tier === 'vip' ? 'VIP All-Access Pass' : 'Standard Pass'}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        ACTIVE
+                      </span>
+                    </p>
+                    {user.subscriptionEndDate && (
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        {language === 'bn' ? 'মেয়াদ শেষ:' : 'Valid until:'} {new Date(user.subscriptionEndDate).toLocaleDateString(language === 'bn' ? 'bn-BD' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSubscriptionModalOpen(false);
+                    openSubscriptionStatusModal();
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs transition-all shrink-0 cursor-pointer"
+                >
+                  {language === 'bn' ? 'বিস্তারিত দেখুন' : 'View Details'}
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               {/* Plan 1: Standard Plan */}
-              <div className="p-6 rounded-2xl border border-white/10 bg-black/40 hover:border-rose-500/40 transition-all flex flex-col justify-between">
+              <div className={`p-6 rounded-2xl border transition-all flex flex-col justify-between ${
+                user?.tier === 'standard' ? 'border-blue-500/60 bg-blue-950/20 shadow-lg shadow-blue-950/30' : 'border-white/10 bg-black/40 hover:border-rose-500/40'
+              }`}>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-mono font-bold text-rose-400 uppercase tracking-wider">
                       স্ট্যান্ডার্ড মাসিক
                     </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold">
-                      বিজ্ঞাপনমুক্ত
-                    </span>
+                    {user?.tier === 'standard' ? (
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 font-bold">
+                        বর্তমান প্ল্যান (CURRENT)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold">
+                        বিজ্ঞাপনমুক্ত
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -259,20 +320,40 @@ export const SubscriptionModal: React.FC = () => {
                   </ul>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleSelectPlan('standard')}
-                  className="mt-6 w-full py-2.5 bg-white/10 hover:bg-rose-600 hover:text-white text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
-                >
-                  <span>স্ট্যান্ডার্ড নিন (৳৯৯)</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                {user?.tier === 'standard' ? (
+                  <div className="mt-6 w-full py-2.5 bg-blue-500/15 border border-blue-500/30 text-blue-400 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-default">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>বর্তমান প্ল্যান (Current Plan)</span>
+                  </div>
+                ) : user?.tier === 'vip' ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPlan('standard')}
+                    className="mt-6 w-full py-2.5 bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <span>ডাউনগ্রেড (Downgrade)</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPlan('standard')}
+                    className="mt-6 w-full py-2.5 bg-white/10 hover:bg-rose-600 hover:text-white text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <span>স্ট্যান্ডার্ড নিন (৳৯৯)</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Plan 2: VIP All-Access Plan */}
-              <div className="p-6 rounded-2xl border-2 border-amber-500/60 bg-gradient-to-b from-amber-950/30 via-rose-950/20 to-black/80 flex flex-col justify-between relative shadow-xl shadow-amber-950/40">
+              <div className={`p-6 rounded-2xl border-2 flex flex-col justify-between relative shadow-xl ${
+                user?.tier === 'vip'
+                  ? 'border-emerald-500/60 bg-gradient-to-b from-amber-950/40 via-emerald-950/20 to-black/80 shadow-emerald-950/30'
+                  : 'border-amber-500/60 bg-gradient-to-b from-amber-950/30 via-rose-950/20 to-black/80 shadow-amber-950/40'
+              }`}>
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-amber-500 to-rose-600 rounded-full text-[10px] font-black uppercase text-black tracking-wider shadow-md">
-                  ★ সেরা অফার (৫৮% সাশ্রয়)
+                  {user?.tier === 'vip' ? '★ আপনার সক্রিয় মেম্বারশিপ' : '★ সেরা অফার (৫৮% সাশ্রয়)'}
                 </div>
 
                 <div className="space-y-3 pt-1">
@@ -281,6 +362,11 @@ export const SubscriptionModal: React.FC = () => {
                       <Crown className="w-3.5 h-3.5 text-amber-400" />
                       <span>ভিআইপি বার্ষিক মেম্বারশিপ</span>
                     </span>
+                    {user?.tier === 'vip' && (
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold">
+                        বর্তমান প্ল্যান (CURRENT)
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -311,15 +397,32 @@ export const SubscriptionModal: React.FC = () => {
                   </ul>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleSelectPlan('vip')}
-                  className="mt-6 w-full py-3 bg-gradient-to-r from-amber-500 via-rose-600 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-black font-extrabold text-xs rounded-xl shadow-xl shadow-amber-950/60 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Crown className="w-4 h-4 text-black" />
-                  <span>ভিআইপি নিন (৳৪৯৯ / ১ বছর)</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-black" />
-                </button>
+                {user?.tier === 'vip' ? (
+                  <div className="mt-6 w-full py-3 bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-extrabold rounded-xl flex items-center justify-center gap-2 cursor-default">
+                    <Crown className="w-4 h-4 text-amber-400" />
+                    <span>বর্তমান প্ল্যান (Current Plan)</span>
+                  </div>
+                ) : user?.tier === 'standard' ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPlan('vip')}
+                    className="mt-6 w-full py-3 bg-gradient-to-r from-amber-500 via-rose-600 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-black font-extrabold text-xs rounded-xl shadow-xl shadow-amber-950/60 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Crown className="w-4 h-4 text-black" />
+                    <span>ভিআইপিতে আপগ্রেড করুন (Upgrade to VIP)</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-black" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPlan('vip')}
+                    className="mt-6 w-full py-3 bg-gradient-to-r from-amber-500 via-rose-600 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-black font-extrabold text-xs rounded-xl shadow-xl shadow-amber-950/60 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Crown className="w-4 h-4 text-black" />
+                    <span>ভিআইপি নিন (৳৪৯৯ / ১ বছর)</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-black" />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -468,17 +571,17 @@ export const SubscriptionModal: React.FC = () => {
                     কুপন কোড: {appliedCoupon?.code} ({appliedCoupon?.labelBn})
                   </p>
                   <p className="text-xs text-slate-300">
-                    কোনো টাকা বা সেন্ড মানি করতে হবে না। নিচের বাটনে ক্লিক করে সাথে সাথে ফ্রি অ্যাক্টিভেট করুন।
+                    কোনো টাকা বা সেন্ড মানি করতে হবে না। নিচের বাটনে ক্লিক করে ভেরিফিকেশনের জন্য রিকোয়েস্ট পাঠান।
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={handleInstantFreeActivation}
+                  onClick={handleSubmitTrx}
                   className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-black text-xs sm:text-sm rounded-xl shadow-xl shadow-emerald-950/60 transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
                 >
                   <Crown className="w-4 h-4 fill-black" />
-                  <span>🎉 এখনই ফ্রি ভিআইপি সক্রিয় করুন</span>
+                  <span>🎉 ফ্রি ভিআইপি মেম্বারশিপের আবেদন জমা দিন</span>
                 </button>
               </div>
             ) : (
@@ -628,21 +731,13 @@ export const SubscriptionModal: React.FC = () => {
               </p>
             </div>
 
-            {/* Test Simulation Button */}
-            <div className="pt-4 border-t border-white/5 max-w-sm mx-auto space-y-2">
-              <p className="text-[11px] text-slate-400 italic">
-                (সিস্টেম ডেমো: এখনই ভিআইপি স্ট্যাটাস দেখতে নিচের বাটনে ক্লিক করুন)
-              </p>
+            <div className="pt-4 border-t border-white/5 max-w-sm mx-auto">
               <button
                 type="button"
-                onClick={() => {
-                  approvePendingSubscription();
-                  closeModal();
-                }}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                onClick={closeModal}
+                className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-all active:scale-95 cursor-pointer"
               >
-                <Check className="w-4 h-4" />
-                <span>অ্যাডমিন ভেরিফাই ও অনুমোদন করুন (Demo Approve)</span>
+                ঠিক আছে (Close)
               </button>
             </div>
           </div>

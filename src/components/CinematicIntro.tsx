@@ -1,36 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { Film, Sparkles, Volume2, VolumeX, ArrowRight } from 'lucide-react';
+import { Film, ArrowRight } from 'lucide-react';
 
 interface CinematicIntroProps {
   onComplete: () => void;
 }
 
 export const CinematicIntro: React.FC<CinematicIntroProps> = ({ onComplete }) => {
-  const [phase, setPhase] = useState<'countdown' | 'logo' | 'shimmer' | 'fadeout'>('countdown');
-  const [countdown, setCountdown] = useState(3);
+  const [isFadingOut, setIsFadingOut] = useState(false);
 
-  // Play subtle cinematic synth hum using Web Audio API safely
+  // Play a brief, polished cinematic audio whoosh / hum
   const playCinematicSound = () => {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(60, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 1.2);
+      osc.frequency.setValueAtTime(65, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(130, ctx.currentTime + 0.6);
 
       gain.gain.setValueAtTime(0.01, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.6);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.0);
+      gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start();
-      osc.stop(ctx.currentTime + 2.1);
+      osc.stop(ctx.currentTime + 1.25);
     } catch {
       // Audio playback can be quietly ignored if browser blocks autoplay
     }
@@ -39,38 +40,26 @@ export const CinematicIntro: React.FC<CinematicIntroProps> = ({ onComplete }) =>
   useEffect(() => {
     playCinematicSound();
 
-    // Sequence timer
-    const countTimer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(countTimer);
-          setPhase('logo');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 550);
+    // Start smooth fadeout at 1.1s
+    const fadeTimer = setTimeout(() => {
+      setIsFadingOut(true);
+    }, 1100);
 
-    const logoTimer = setTimeout(() => {
-      setPhase('shimmer');
-    }, 1300);
-
+    // Complete intro at 1.5s total duration
     const finishTimer = setTimeout(() => {
-      setPhase('fadeout');
-      setTimeout(onComplete, 500);
-    }, 2400);
+      onComplete();
+    }, 1500);
 
     return () => {
-      clearInterval(countTimer);
-      clearTimeout(logoTimer);
+      clearTimeout(fadeTimer);
       clearTimeout(finishTimer);
     };
   }, [onComplete]);
 
   return (
     <div
-      className={`fixed inset-0 z-[100] bg-[#050608] flex flex-col items-center justify-center p-4 transition-opacity duration-700 select-none overflow-hidden ${
-        phase === 'fadeout' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      className={`fixed inset-0 z-[100] bg-[#050608] flex flex-col items-center justify-center p-4 transition-opacity duration-400 ease-out select-none overflow-hidden ${
+        isFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >
       {/* Background Animated Spotlight Radiance */}
@@ -87,39 +76,24 @@ export const CinematicIntro: React.FC<CinematicIntroProps> = ({ onComplete }) =>
         <ArrowRight className="w-3.5 h-3.5" />
       </button>
 
-      {/* Center Cinematic Stage */}
-      <div className="relative z-10 flex flex-col items-center text-center space-y-6 max-w-lg">
-        {phase === 'countdown' ? (
-          /* Countdown Reel Animation */
-          <div className="relative w-28 h-28 flex items-center justify-center">
-            {/* Spinning Reel Ring */}
-            <div className="absolute inset-0 rounded-full border-2 border-dashed border-rose-500/50 animate-spin" />
-            <div className="absolute inset-2 rounded-full border border-white/20" />
-            <span className="font-cinzel text-5xl font-black text-white font-mono animate-ping">
-              {countdown}
-            </span>
-          </div>
-        ) : (
-          /* Brand Logo Reveal */
-          <div className="space-y-4 animate-in zoom-in-75 duration-700">
-            <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-tr from-rose-700 via-rose-600 to-amber-500 flex items-center justify-center text-white font-cinzel font-bold text-2xl shadow-2xl shadow-rose-950/80 border border-white/20">
-              চ
-            </div>
+      {/* Center Cinematic Stage: Immediate Sleek Brand Reveal */}
+      <div className="relative z-10 flex flex-col items-center text-center space-y-4 max-w-lg animate-in fade-in zoom-in-95 duration-500">
+        <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-tr from-rose-700 via-rose-600 to-amber-500 flex items-center justify-center text-white font-cinzel font-bold text-2xl shadow-2xl shadow-rose-950/80 border border-white/20">
+          চ
+        </div>
 
-            <div className="space-y-1">
-              <h1 className="text-4xl sm:text-5xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-white to-amber-300 font-cinzel drop-shadow-2xl">
-                CHITROKATHA
-              </h1>
-              <p className="text-sm font-semibold tracking-wider text-rose-400 font-cinzel">
-                চিত্রকথা · সিনেমাটিক ডিজিটাল আর্কাইভ
-              </p>
-            </div>
+        <div className="space-y-1">
+          <h1 className="text-4xl sm:text-5xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-white to-amber-300 font-cinzel drop-shadow-2xl">
+            CHITROKATHA
+          </h1>
+          <p className="text-sm font-semibold tracking-wider text-rose-400 font-cinzel">
+            চিত্রকথা · সিনেমাটিক ডিজিটাল আর্কাইভ
+          </p>
+        </div>
 
-            <p className="text-xs text-slate-400 font-light tracking-widest uppercase">
-              The Ultimate Streaming Experience
-            </p>
-          </div>
-        )}
+        <p className="text-xs text-slate-400 font-light tracking-widest uppercase">
+          The Ultimate Streaming Experience
+        </p>
       </div>
 
       {/* Bottom Audio / Filmstrip Accent */}
@@ -130,3 +104,4 @@ export const CinematicIntro: React.FC<CinematicIntroProps> = ({ onComplete }) =>
     </div>
   );
 };
+

@@ -177,9 +177,21 @@ export const PaymentsView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-white/5">
               {paginated.map((payment) => (
-                <tr key={payment.id} className="hover:bg-white/[0.02] transition-colors">
+                <tr
+                  key={payment.id}
+                  className={`transition-colors ${
+                    payment.status === 'pending'
+                      ? 'bg-amber-500/[0.05] hover:bg-amber-500/[0.08] ring-1 ring-amber-500/10'
+                      : 'hover:bg-white/[0.02]'
+                  }`}
+                >
                   <td className="px-5 py-3.5 font-mono font-bold text-rose-400">
-                    {payment.trxId}
+                    <div className="flex items-center gap-1.5">
+                      {payment.status === 'pending' && (
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+                      )}
+                      <span>{payment.trxId}</span>
+                    </div>
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2.5">
@@ -194,13 +206,17 @@ export const PaymentsView: React.FC = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 text-zinc-300 font-medium">{payment.planName}</td>
+                  <td className="px-5 py-3.5 text-zinc-300 font-medium">
+                    <span className="px-2 py-0.5 rounded-md bg-white/5 font-mono text-[11px] font-semibold text-amber-300">
+                      {payment.planName}
+                    </span>
+                  </td>
                   <td className="px-5 py-3.5 font-bold font-mono text-emerald-400 text-sm">
                     ৳{payment.amount}
                   </td>
                   <td className="px-5 py-3.5 font-mono text-zinc-300">
                     <span className="capitalize font-bold text-white">{payment.method}</span>
-                    <span className="block text-[10px] text-zinc-500">{payment.senderPhone}</span>
+                    <span className="block text-[10px] text-zinc-400">{payment.senderPhone}</span>
                   </td>
                   <td className="px-5 py-3.5 text-zinc-400">{payment.date}</td>
                   <td className="px-5 py-3.5">
@@ -217,18 +233,28 @@ export const PaymentsView: React.FC = () => {
                       {payment.status === 'pending' && (
                         <>
                           <button
-                            onClick={() => updatePaymentStatus(payment.id, 'approved')}
-                            title="Approve"
-                            className="p-1.5 text-emerald-400 hover:bg-emerald-500/10 rounded-lg"
+                            onClick={() => {
+                              if (window.confirm(`Approve payment ${payment.trxId} (৳${payment.amount}) for ${payment.userName}? This will activate their subscription immediately.`)) {
+                                updatePaymentStatus(payment.id, 'approved');
+                              }
+                            }}
+                            title="Approve and activate subscription"
+                            className="px-2.5 py-1 text-xs font-bold text-black bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all flex items-center gap-1 shadow-md shadow-emerald-950/40 cursor-pointer"
                           >
-                            <CheckCircle2 className="w-4 h-4" />
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Approve</span>
                           </button>
                           <button
-                            onClick={() => updatePaymentStatus(payment.id, 'rejected')}
-                            title="Reject"
-                            className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg"
+                            onClick={() => {
+                              if (window.confirm(`Reject payment ${payment.trxId} for ${payment.userName}?`)) {
+                                updatePaymentStatus(payment.id, 'rejected');
+                              }
+                            }}
+                            title="Reject payment request"
+                            className="px-2 py-1 text-xs font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
                           >
-                            <XCircle className="w-4 h-4" />
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Reject</span>
                           </button>
                         </>
                       )}

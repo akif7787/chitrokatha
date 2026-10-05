@@ -15,6 +15,7 @@ import { NotificationsView } from './components/views/NotificationsView';
 import { CouponsView } from './components/views/CouponsView';
 import { AnalyticsView } from './components/views/AnalyticsView';
 import { SettingsView } from './components/views/SettingsView';
+import { SupportView } from './components/views/SupportView';
 import { AdminsView } from './components/views/AdminsView';
 import { AdminGuard } from './components/auth/AdminGuard';
 import { AuthProvider } from '../context/AuthContext';
@@ -51,6 +52,8 @@ const AdminRouteRenderer: React.FC = () => {
       return <AnalyticsView />;
     case '/admin/settings':
       return <SettingsView />;
+    case '/admin/support':
+      return <SupportView />;
     case '/admin/admins':
       return <AdminsView />;
     default:

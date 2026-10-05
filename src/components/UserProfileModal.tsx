@@ -172,13 +172,12 @@ export const UserProfileModal: React.FC = () => {
     isProfileModalOpen,
     setIsProfileModalOpen,
     updateUserProfile,
-    approvePendingSubscription,
     cancelPendingSubscription,
-    upgradeSubscription,
     cancelSubscription,
     pauseSubscription,
     resumeSubscription,
     openSubscriptionModal,
+    openSubscriptionStatusModal,
     openRequestModal,
     openSupportModal,
   } = useAuth();
@@ -696,17 +695,30 @@ export const UserProfileModal: React.FC = () => {
               <span>{language === 'bn' ? 'সাবস্ক্রিপশন ও পেমেন্ট স্ট্যাটাস' : 'Subscription & Status'}</span>
             </h4>
 
-            {user.tier === 'free' && !user.pendingSubscription && (
+            <div className="flex items-center gap-2.5">
               <button
+                type="button"
                 onClick={() => {
                   setIsProfileModalOpen(false);
-                  openSubscriptionModal();
+                  openSubscriptionStatusModal();
                 }}
-                className="text-xs text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer"
+                className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline cursor-pointer"
               >
-                {language === 'bn' ? 'আপগ্রেড করুন' : 'Upgrade'}
+                {language === 'bn' ? 'স্ট্যাটাস ও হিস্ট্রি দেখুন' : 'View Status & History'}
               </button>
-            )}
+
+              {user.tier === 'free' && !user.pendingSubscription && (
+                <button
+                  onClick={() => {
+                    setIsProfileModalOpen(false);
+                    openSubscriptionModal();
+                  }}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-bold underline cursor-pointer"
+                >
+                  {language === 'bn' ? 'আপগ্রেড' : 'Upgrade'}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* If there is a PENDING Send Money payment request */}
@@ -735,20 +747,16 @@ export const UserProfileModal: React.FC = () => {
                 </p>
               </div>
 
-              <div className="pt-2 flex items-center gap-2 border-t border-amber-500/20">
-                <button
-                  type="button"
-                  onClick={approvePendingSubscription}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold shadow-md transition-all cursor-pointer"
-                >
-                  ✓ ডেমো অনুমোদন করুন (Admin Approve Test)
-                </button>
+              <div className="pt-2 flex items-center justify-between border-t border-amber-500/20">
+                <span className="text-[10px] text-amber-400 font-medium">
+                  স্ট্যাটাস: অ্যাডমিন অনুমোদনের অপেক্ষায় (Pending)
+                </span>
                 <button
                   type="button"
                   onClick={cancelPendingSubscription}
-                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 text-[10px] transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-rose-400 text-[10px] transition-all cursor-pointer"
                 >
-                  বাতিল
+                  আবেদন বাতিল
                 </button>
               </div>
             </div>

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#9f1239" />
+      <stop offset="45%" stop-color="#e11d48" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+
+    <!-- Inner Border Glow -->
+    <linearGradient id="borderGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#be123c" stop-opacity="0.2" />
+    </linearGradient>
+
+    <!-- Shadow filter for crisp contrast -->
+    <filter id="subtleShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect 
+    x="6" 
+    y="6" 
+    width="116" 
+    height="116" 
+    rx="28" 
+    ry="28" 
+    fill="url(#bgGrad)" 
+    filter="url(#subtleShadow)"
+  />
+
+  <!-- Subtle Inner Border Highlight -->
+  <rect 
+    x="6" 
+    y="6" 
+    width="116" 
+    height="116" 
+    rx="28" 
+    ry="28" 
+    fill="none" 
+    stroke="url(#borderGlow)" 
+    stroke-width="2.5" 
+  />
+
+  <!-- ChitroKatha Signature Bengali Glyph 'চ' -->
+  <text 
+    x="64" 
+    y="86" 
+    font-family="'Hind Siliguri', 'Cinzel', 'Noto Sans Bengali', sans-serif" 
+    font-size="74" 
+    font-weight="900" 
+    fill="#ffffff" 
+    text-anchor="middle"
+    letter-spacing="-1"
+    style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));"
+  >চ</text>
+</svg>

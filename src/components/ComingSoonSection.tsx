@@ -74,7 +74,7 @@ export const ComingSoonSection: React.FC<ComingSoonSectionProps> = ({
   };
 
   return (
-    <section className="relative px-4 sm:px-6 lg:px-8 py-8 overflow-hidden">
+    <section className="relative w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-8 overflow-hidden">
       {/* Background Decorative Glow */}
       <div className="absolute top-1/2 left-10 -translate-y-1/2 w-96 h-96 bg-amber-600/5 rounded-full blur-3xl pointer-events-none" />
 

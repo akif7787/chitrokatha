@@ -58,7 +58,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
 
   return (
     <footer className="border-t border-white/5 bg-[#06070a] text-slate-400 text-xs mt-16 transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-12">
         {/* ==================================================== */}
         {/* Newsletter Signup Banner                             */}
         {/* ==================================================== */}
@@ -108,7 +108,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
                   onSubmit={handleNewsletterSubmit}
                   className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 max-w-md w-full"
                 >
-                  <div className="relative flex-1 min-w-[240px]">
+                  <div className="relative flex-1 min-w-0 w-full">
                     <input
                       type="email"
                       required

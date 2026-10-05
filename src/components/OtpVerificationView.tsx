@@ -179,7 +179,7 @@ export const OtpVerificationView: React.FC<OtpVerificationViewProps> = ({
       )}
 
       {/* 6-Digit OTP Input Boxes */}
-      <div className="flex justify-center items-center gap-2 sm:gap-2.5 my-3">
+      <div className="flex justify-center items-center gap-1.5 xs:gap-2 sm:gap-2.5 my-3 max-w-full">
         {digits.map((digit, idx) => (
           <input
             key={idx}
@@ -194,7 +194,7 @@ export const OtpVerificationView: React.FC<OtpVerificationViewProps> = ({
             onKeyDown={(e) => handleKeyDown(idx, e)}
             onPaste={handlePaste}
             disabled={isVerifying}
-            className={`w-11 h-12 sm:w-12 sm:h-14 text-center text-lg sm:text-xl font-bold rounded-xl bg-black/60 border transition-all duration-150 focus:outline-none ${
+            className={`w-9 h-11 xs:w-10 xs:h-12 sm:w-12 sm:h-14 text-center text-base xs:text-lg sm:text-xl font-bold rounded-xl bg-black/60 border transition-all duration-150 focus:outline-none shrink-0 ${
               digit
                 ? 'border-rose-500 text-white shadow-md shadow-rose-950/30'
                 : 'border-white/10 text-zinc-400 focus:border-amber-400'

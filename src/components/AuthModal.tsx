@@ -138,10 +138,10 @@ export const AuthModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
       <div className="fixed inset-0" onClick={() => setIsAuthModalOpen(false)} />
 
-      <div className="relative z-10 w-full max-w-md bg-[#0d0f15] border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6">
+      <div className="relative z-10 w-full max-w-md bg-[#0d0f15] border border-white/10 rounded-2xl shadow-2xl p-5 sm:p-8 space-y-6 max-h-[92vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
           <div className="flex items-center gap-2.5">

@@ -276,7 +276,7 @@ function ChitroKathaApp() {
 
             {/* VIP Ad-Free Callout Banner for Free Users */}
             {!isPremium && (
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12">
                 <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-950/40 via-rose-950/40 to-black border border-amber-500/30 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xl">
                   <div className="space-y-1.5 text-center sm:text-left">
                     <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -309,7 +309,7 @@ function ChitroKathaApp() {
 
             {/* SECTION 1: MOVIES (BANGLA, HINDI, ENGLISH) */}
             <div className="space-y-2">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4">
+              <div className="w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4">
                 <div>
                   <h2 className="text-xl sm:text-2xl font-black text-white font-cinzel tracking-wide flex items-center gap-2">
                     <Clapperboard className="w-5 h-5 text-rose-500" />
@@ -376,7 +376,7 @@ function ChitroKathaApp() {
 
             {/* SECTION 2: DRAMA (BANGLA, PAKISTANI, KOREAN) */}
             <div className="space-y-2">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-6">
+              <div className="w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-6">
                 <div>
                   <h2 className="text-xl sm:text-2xl font-black text-white font-cinzel tracking-wide flex items-center gap-2">
                     <Tv className="w-5 h-5 text-amber-500" />
@@ -443,7 +443,7 @@ function ChitroKathaApp() {
 
             {/* SECTION 3: WEB SERIES (BANGLA, HINDI, ENGLISH) */}
             <div className="space-y-2">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-6">
+              <div className="w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-6">
                 <div>
                   <h2 className="text-xl sm:text-2xl font-black text-white font-cinzel tracking-wide flex items-center gap-2">
                     <Film className="w-5 h-5 text-emerald-500" />
@@ -510,7 +510,7 @@ function ChitroKathaApp() {
           </div>
         ) : (
           /* Dedicated Category Screen: Movie / Drama / Series */
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-8">
             <div className="border-b border-white/5 pb-4 mb-4">
               <h1 className="text-2xl sm:text-3xl font-extrabold text-white font-cinzel">
                 {activeTab === 'movies' && 'মুভি ও চলচ্চিত্র (Movies)'}
@@ -524,10 +524,10 @@ function ChitroKathaApp() {
               </p>
 
               {/* Sub-Filters by Industry (Bangla, Hindi, English, Pakistani, Korean) */}
-              <div className="flex items-center flex-wrap gap-2 mt-4">
+              <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar py-1 max-w-full">
                 <button
                   onClick={() => setSelectedIndustryFilter('all')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                     selectedIndustryFilter === 'all'
                       ? 'bg-rose-600 text-white border-rose-500 shadow-md'
                       : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -540,7 +540,7 @@ function ChitroKathaApp() {
                   <>
                     <button
                       onClick={() => setSelectedIndustryFilter('bangla')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'bangla'
                           ? 'bg-rose-600 text-white border-rose-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -550,7 +550,7 @@ function ChitroKathaApp() {
                     </button>
                     <button
                       onClick={() => setSelectedIndustryFilter('hindi')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'hindi'
                           ? 'bg-rose-600 text-white border-rose-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -560,7 +560,7 @@ function ChitroKathaApp() {
                     </button>
                     <button
                       onClick={() => setSelectedIndustryFilter('english')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'english'
                           ? 'bg-rose-600 text-white border-rose-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -575,7 +575,7 @@ function ChitroKathaApp() {
                   <>
                     <button
                       onClick={() => setSelectedIndustryFilter('bangla')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'bangla'
                           ? 'bg-amber-600 text-white border-amber-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -585,7 +585,7 @@ function ChitroKathaApp() {
                     </button>
                     <button
                       onClick={() => setSelectedIndustryFilter('pakistani')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'pakistani'
                           ? 'bg-amber-600 text-white border-amber-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -595,7 +595,7 @@ function ChitroKathaApp() {
                     </button>
                     <button
                       onClick={() => setSelectedIndustryFilter('korean')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'korean'
                           ? 'bg-amber-600 text-white border-amber-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -610,7 +610,7 @@ function ChitroKathaApp() {
                   <>
                     <button
                       onClick={() => setSelectedIndustryFilter('bangla')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'bangla'
                           ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -620,7 +620,7 @@ function ChitroKathaApp() {
                     </button>
                     <button
                       onClick={() => setSelectedIndustryFilter('hindi')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'hindi'
                           ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -630,7 +630,7 @@ function ChitroKathaApp() {
                     </button>
                     <button
                       onClick={() => setSelectedIndustryFilter('english')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                         selectedIndustryFilter === 'english'
                           ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -659,7 +659,7 @@ function ChitroKathaApp() {
                 <p className="text-xs text-slate-500">{t('tryDifferentSearch')}</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6 mt-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 sm:gap-6 mt-6">
                 {filteredCategoryMovies.map((movie) => (
                   <MovieCard
                     key={movie.id}

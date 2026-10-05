@@ -203,10 +203,10 @@ export const SubscriptionModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-lg animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-lg animate-in fade-in duration-200">
       <div className="fixed inset-0" onClick={closeModal} />
 
-      <div className="relative z-10 w-full max-w-3xl bg-[#0c0e15] border border-amber-500/30 rounded-3xl shadow-2xl overflow-hidden p-6 sm:p-8 space-y-6 max-h-[92vh] overflow-y-auto">
+      <div className="relative z-10 w-full max-w-3xl bg-[#0c0e15] border border-amber-500/30 rounded-3xl shadow-2xl overflow-hidden p-4 sm:p-8 space-y-6 max-h-[92vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-5">
           <div className="flex items-center gap-3">

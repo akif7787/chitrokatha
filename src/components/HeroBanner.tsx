@@ -191,7 +191,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
       </div>
 
       {/* Main Content Layout */}
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+      <div className="relative z-10 w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 flex flex-col lg:flex-row lg:items-end justify-between gap-8">
         
         {/* Left Column: Movie Title, Badges, Synopsis & CTAs */}
         <div className="max-w-2xl space-y-4">
@@ -240,7 +240,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           </div>
 
           {/* Primary Movie Title with Cinematic Styling */}
-          <h1 className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight text-white leading-tight font-cinzel text-balance drop-shadow-2xl">
+          <h1 className="text-2xl xs:text-3xl sm:text-5xl md:text-6xl font-black tracking-tight text-white leading-tight font-cinzel text-balance drop-shadow-2xl break-words">
             {getTitle(currentMovie)}
           </h1>
 
@@ -263,14 +263,14 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           </p>
 
           {/* Action CTAs */}
-          <div className="pt-2 flex items-center flex-wrap gap-3">
+          <div className="pt-2 flex items-center flex-wrap gap-2 sm:gap-3">
             {/* Primary Watch Button */}
             <button
               onClick={() => onPlay(currentMovie, 'stream')}
-              className="group flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white font-black text-xs sm:text-sm transition-all shadow-xl shadow-rose-950/60 active:scale-95 whitespace-nowrap"
+              className="group flex items-center gap-2 sm:gap-2.5 px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white font-black text-xs sm:text-sm transition-all shadow-xl shadow-rose-950/60 active:scale-95 whitespace-nowrap cursor-pointer"
             >
-              <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Play className="w-3 sm:w-3.5 h-3 sm:h-3.5 fill-white ml-0.5" />
               </div>
               <span>{t('watchNow')}</span>
             </button>
@@ -278,9 +278,9 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             {/* Trailer & Cast Details */}
             <button
               onClick={() => onOpenDetails(currentMovie)}
-              className="flex items-center gap-2 px-4 py-3.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs sm:text-sm transition-all border border-white/10 active:scale-95 whitespace-nowrap backdrop-blur-md"
+              className="flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-2.5 sm:py-3.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs sm:text-sm transition-all border border-white/10 active:scale-95 whitespace-nowrap backdrop-blur-md cursor-pointer"
             >
-              <Film className="w-4 h-4 text-slate-300" />
+              <Film className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-slate-300" />
               <span>{language === 'bn' ? 'ট্রেইলার ও কাস্ট' : 'Trailer & Details'}</span>
             </button>
 

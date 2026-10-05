@@ -25,10 +25,10 @@ export const BestOfferModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
       <div className="fixed inset-0" onClick={() => setIsOpen(false)} />
 
-      <div className="relative z-10 w-full max-w-lg bg-gradient-to-b from-[#14121a] via-[#0d0f17] to-[#07080d] border-2 border-amber-500/60 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 overflow-hidden">
+      <div className="relative z-10 w-full max-w-lg bg-gradient-to-b from-[#14121a] via-[#0d0f17] to-[#07080d] border-2 border-amber-500/60 rounded-3xl shadow-2xl p-4 sm:p-8 space-y-6 overflow-y-auto max-h-[92vh]">
         {/* Top Glow Radiance */}
         <div className="absolute -top-12 -right-12 w-40 h-40 bg-rose-600/30 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-12 -left-12 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />

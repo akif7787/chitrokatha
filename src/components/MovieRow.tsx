@@ -49,7 +49,7 @@ export const MovieRow: React.FC<MovieRowProps> = ({
   return (
     <section
       data-carousel-row-container="true"
-      className="relative my-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto focus-within:z-10"
+      className="relative my-8 px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 w-full focus-within:z-10"
     >
       {/* Section Header */}
       <div className="flex items-end justify-between mb-4">

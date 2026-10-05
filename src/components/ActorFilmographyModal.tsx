@@ -41,10 +41,10 @@ export const ActorFilmographyModal: React.FC<ActorFilmographyModalProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200">
       <div className="fixed inset-0" onClick={onClose} />
 
-      <div className="relative z-10 w-full max-w-4xl bg-[#0c0e16] border border-white/10 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 max-h-[92vh] overflow-y-auto">
+      <div className="relative z-10 w-full max-w-4xl bg-[#0c0e16] border border-white/10 rounded-3xl shadow-2xl p-4 sm:p-8 space-y-6 max-h-[92vh] overflow-y-auto">
         {/* Header with Actor Bio */}
         <div className="flex items-start justify-between border-b border-white/10 pb-6 gap-4">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">

@@ -50,10 +50,10 @@ export const SupportModal: React.FC = () => {
   const whatsappUrl = `https://wa.me/8801643442518?text=${whatsappText}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
       <div className="fixed inset-0" onClick={() => setIsSupportModalOpen(false)} />
 
-      <div className="relative z-10 w-full max-w-lg bg-[#0c0e16] border border-white/10 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[90vh]">
+      <div className="relative z-10 w-full max-w-lg bg-[#0c0e16] border border-white/10 rounded-3xl shadow-2xl p-4 sm:p-8 space-y-6 overflow-y-auto max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
           <div className="flex items-center gap-3">

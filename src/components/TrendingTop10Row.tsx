@@ -47,7 +47,7 @@ export const TrendingTop10Row: React.FC<TrendingTop10RowProps> = ({
   return (
     <section
       data-carousel-row-container="true"
-      className="relative px-4 sm:px-6 lg:px-8 py-8 focus-within:z-10"
+      className="relative w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-8 focus-within:z-10"
     >
       {/* Title */}
       <div className="flex items-center justify-between mb-4">

@@ -32,7 +32,8 @@ export const AuthModal: React.FC = () => {
     resetPasswordEmail,
     changePassword,
     authError,
-    setAuthError
+    setAuthError,
+    authMessage
   } = useAuth();
 
   const { language } = useLanguage();
@@ -111,7 +112,16 @@ export const AuthModal: React.FC = () => {
           return;
         }
 
-        await changePassword(password);
+        const res = await changePassword(password);
+        if (res && res.success) {
+          setPassword('');
+          setConfirmPassword('');
+          setResetSuccessMessage(
+            language === 'bn'
+              ? 'আপনার পাসওয়ার্ড সফলভাবে পরিবর্তিত হয়েছে। নতুন পাসওয়ার্ড দিয়ে লগইন করুন।'
+              : 'Password updated successfully. Please sign in with your new password.'
+          );
+        }
       }
     } finally {
       setIsSubmitting(false);
@@ -211,6 +221,14 @@ export const AuthModal: React.FC = () => {
                 >
                   {language === 'bn' ? 'রেজিস্ট্রেশন' : 'Register'}
                 </button>
+              </div>
+            )}
+
+            {/* Auth Notice (e.g., account required for playback) */}
+            {authMessage && (
+              <div className="p-3.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-xs animate-in fade-in flex items-start gap-2.5 leading-relaxed">
+                <span className="text-base leading-none">🎬</span>
+                <span>{authMessage}</span>
               </div>
             )}
 
@@ -383,6 +401,31 @@ export const AuthModal: React.FC = () => {
                     className="text-xs text-slate-400 hover:text-white"
                   >
                     ← {language === 'bn' ? 'লগইনে ফিরে যান' : 'Back to Sign In'}
+                  </button>
+                </div>
+              )}
+
+              {authModalMode === 'reset_password' && (
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthError(null);
+                      setAuthModalMode('login');
+                    }}
+                    className="text-xs text-slate-400 hover:text-white"
+                  >
+                    ← {language === 'bn' ? 'লগইনে ফিরে যান' : 'Back to Sign In'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthError(null);
+                      setAuthModalMode('forgot_password');
+                    }}
+                    className="text-xs text-rose-400 hover:text-rose-300"
+                  >
+                    {language === 'bn' ? 'নতুন লিঙ্ক অনুরোধ করুন' : 'Request new link'}
                   </button>
                 </div>
               )}

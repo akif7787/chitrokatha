@@ -21,6 +21,8 @@ import {
   Users,
   Eye,
   Sliders,
+  Lock,
+  UserPlus,
 } from 'lucide-react';
 import { Movie, StreamingServer } from '../types/movie';
 import { useLanguage } from '../context/LanguageContext';
@@ -45,7 +47,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const { t, getTitle, getSynopsis, getGenres, getDirector, getCast, language } = useLanguage();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { isInWatchlist, toggleWatchlist, recordWatch, addReview, getMovieReviews } = useWatchlist();
-  const { isPremium, openSubscriptionModal } = useAuth();
+  const { isPremium, openSubscriptionModal, isLoggedIn, openLoginModal } = useAuth();
 
   // WatchMode sources state
   const [watchmodeSources, setWatchmodeSources] = useState<StreamingSource[]>([]);
@@ -224,8 +226,64 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         {/* Video Player Display Container */}
         {activeTab === 'player' ? (
           <div className="relative aspect-video w-full bg-black shrink-0 overflow-hidden flex items-center justify-center">
-            {/* PRE-ROLL AD FOR FREE USERS */}
-            {showAd && !isPremium ? (
+            {!isLoggedIn ? (
+              /* Require Account Guard Overlay */
+              <div className="relative w-full h-full flex flex-col items-center justify-center p-6 text-center overflow-hidden">
+                {/* Backdrop poster with heavy blur and overlay */}
+                {movie.backdrop && (
+                  <img
+                    src={movie.backdrop}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover blur-xl opacity-25 scale-110 pointer-events-none"
+                  />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#08090d] via-black/85 to-black/75 pointer-events-none" />
+
+                <div className="relative z-10 max-w-md mx-auto space-y-4 px-4">
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-600/20 border border-rose-500/30 flex items-center justify-center text-rose-500 shadow-xl shadow-rose-950/40">
+                    <Lock className="w-7 h-7" />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-lg md:text-xl font-bold text-white tracking-wide">
+                      {language === 'bn' ? 'ভিডিও দেখতে লগ ইন করুন' : 'Sign In to Watch'}
+                    </h3>
+                    <p className="text-xs md:text-sm text-slate-300 leading-relaxed">
+                      {language === 'bn'
+                        ? 'ভিডিও দেখতে আগে একটি অ্যাকাউন্ট তৈরি করুন বা লগ ইন করুন।'
+                        : 'Please create an account or log in to watch this video.'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                    <button
+                      onClick={() =>
+                        openLoginModal(
+                          'ভিডিও দেখতে আগে একটি অ্যাকাউন্ট তৈরি করুন বা লগ ইন করুন। (Please create an account or log in to watch this video.)'
+                        )
+                      }
+                      className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs tracking-wider uppercase transition-all shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>{language === 'bn' ? 'লগইন / সাইন আপ' : 'Login / Sign Up'}</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('watchmode')}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white font-medium text-xs transition-all border border-white/10 flex items-center justify-center gap-2"
+                    >
+                      <Tv className="w-4 h-4 text-emerald-400" />
+                      <span>{language === 'bn' ? 'স্ট্রিমিং গাইড দেখুন' : 'Streaming Guide'}</span>
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 pt-1">
+                    {language === 'bn'
+                      ? '✓ ফ্রি অ্যাকাউন্ট দিয়ে সাধারণ কনটেন্ট সম্পূর্ণ বিনামূল্যে উপভোগ করুন'
+                      : '✓ Free accounts can enjoy regular titles at no cost'}
+                  </p>
+                </div>
+              </div>
+            ) : showAd && !isPremium ? (
               <AdPlayerOverlay onAdComplete={() => setShowAd(false)} />
             ) : (
               <>

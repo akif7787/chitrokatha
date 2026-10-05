@@ -19,45 +19,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { SubscriptionTier } from '../types/user';
-
-interface CouponRule {
-  codes: string[];
-  type: 'percent' | 'flat';
-  value: number;
-  labelBn: string;
-  labelEn: string;
-}
-
-const AVAILABLE_COUPONS: CouponRule[] = [
-  {
-    codes: ['AKIF', 'AKIF50', 'AHANAF', 'AHANAFAKIF'],
-    type: 'percent',
-    value: 50,
-    labelBn: 'আহনাফ আকিফ ক্রিয়েটর ৫০% ছাড়',
-    labelEn: 'Ahanaf Akif Creator 50% OFF',
-  },
-  {
-    codes: ['CHITRO100', 'FREEVIP', 'FREE100'],
-    type: 'percent',
-    value: 100,
-    labelBn: '১০০% ফ্রি ভিআইপি এক্সেস',
-    labelEn: '100% Free VIP Trial Access',
-  },
-  {
-    codes: ['VIP20', 'DISCOUNT20', 'EID2026'],
-    type: 'percent',
-    value: 20,
-    labelBn: '২০% সাশ্রয়ী স্পেশাল ছাড়',
-    labelEn: '20% Special Savings',
-  },
-  {
-    codes: ['CINEMA50', 'CHITRO50'],
-    type: 'flat',
-    value: 50,
-    labelBn: 'ফ্ল্যাট ৫০ টাকা ছাড়',
-    labelEn: 'Flat ৳50 OFF',
-  },
-];
+import { validateCouponCode } from '../services/couponService';
+import { sendSubscriptionConfirmationEmail } from '../services/subscriptionEmailService';
 
 interface AppliedCoupon {
   code: string;
@@ -130,34 +93,30 @@ export const SubscriptionModal: React.FC = () => {
   // Apply coupon code (Available on payment step)
   const handleApplyCoupon = (codeToApply?: string) => {
     const raw = (codeToApply || couponInput).trim().toUpperCase();
-    if (!raw) {
-      setCouponError(language === 'bn' ? 'দয়া করে একটি কুপন কোড লিখুন' : 'Please enter a coupon code');
-      setCouponSuccess(null);
-      return;
-    }
+    const result = validateCouponCode(raw, language);
 
-    const matched = AVAILABLE_COUPONS.find((c) => c.codes.includes(raw));
-
-    if (matched) {
+    if (result.valid && result.code && result.type && result.value !== undefined) {
       setAppliedCoupon({
-        code: raw,
-        type: matched.type,
-        value: matched.value,
-        labelBn: matched.labelBn,
-        labelEn: matched.labelEn,
+        code: result.code,
+        type: result.type,
+        value: result.value,
+        labelBn: result.labelBn || '',
+        labelEn: result.labelEn || '',
       });
-      setCouponInput(raw);
+      setCouponInput(result.code);
       setCouponError(null);
       setCouponSuccess(
         language === 'bn'
-          ? `🎉 '${raw}' কুপন সফলভাবে প্রয়োগ করা হয়েছে! (${matched.labelBn})`
-          : `🎉 Coupon '${raw}' applied successfully! (${matched.labelEn})`
+          ? `🎉 '${result.code}' কুপন সফলভাবে প্রয়োগ করা হয়েছে! (${result.labelBn})`
+          : `🎉 Coupon '${result.code}' applied successfully! (${result.labelEn})`
       );
     } else {
+      setAppliedCoupon(null);
       setCouponError(
-        language === 'bn'
-          ? 'ভুল কুপন কোড! অনুগ্রহ করে AKIF50, CHITRO100 বা VIP20 ব্যবহার করুন।'
-          : 'Invalid coupon! Try AKIF50, CHITRO100, or VIP20.'
+        result.error ||
+          (language === 'bn'
+            ? 'প্রদত্ত কুপন কোডটি সঠিক নয় বা মেয়াদোত্তীর্ণ।'
+            : 'The coupon code entered is invalid or has expired.')
       );
       setCouponSuccess(null);
     }
@@ -174,6 +133,21 @@ export const SubscriptionModal: React.FC = () => {
   // Instant free VIP activation when 100% coupon applied
   const handleInstantFreeActivation = () => {
     upgradeSubscription(selectedTier);
+
+    // Send confirmation email securely
+    if (user?.email) {
+      sendSubscriptionConfirmationEmail({
+        recipientEmail: user.email,
+        recipientName: user.name,
+        planName: selectedTier === 'vip' ? 'ChitroKatha VIP All-Access Pass (১০০% ফ্রি প্রোমো)' : 'ChitroKatha Standard Pass',
+        tier: selectedTier,
+        amount: 0,
+        trxId: appliedCoupon?.code ? `COUPON-${appliedCoupon.code}` : undefined,
+        startDate: new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
+      });
+    }
+
     closeModal();
   };
 
@@ -413,6 +387,9 @@ export const SubscriptionModal: React.FC = () => {
                   <input
                     type="text"
                     value={couponInput}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     onChange={(e) => {
                       setCouponInput(e.target.value.toUpperCase());
                       setCouponError(null);
@@ -423,7 +400,7 @@ export const SubscriptionModal: React.FC = () => {
                         handleApplyCoupon();
                       }
                     }}
-                    placeholder="যেমন: AKIF50, CHITRO100, VIP20"
+                    placeholder={language === 'bn' ? 'কুপন কোড লিখুন' : 'Enter coupon code'}
                     className="w-full bg-black/60 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-amber-300 placeholder-slate-500 font-mono uppercase font-bold focus:outline-none focus:border-amber-400"
                   />
                 </div>
@@ -445,34 +422,6 @@ export const SubscriptionModal: React.FC = () => {
                     {language === 'bn' ? 'প্রয়োগ করুন' : 'Apply'}
                   </button>
                 )}
-              </div>
-
-              {/* Clickable Quick Coupon Chips */}
-              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                <span className="text-[10px] text-slate-400 font-medium">
-                  {language === 'bn' ? 'ক্লিক করে কুপন দিন:' : 'Click to use:'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleApplyCoupon('AKIF50')}
-                  className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-white/5 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-all cursor-pointer"
-                >
-                  🏷️ AKIF50 (৫০% ছাড়)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyCoupon('CHITRO100')}
-                  className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-white/5 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-all cursor-pointer"
-                >
-                  🎁 CHITRO100 (১০০% ফ্রি)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyCoupon('VIP20')}
-                  className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all cursor-pointer"
-                >
-                  ⚡ VIP20 (২০% ছাড়)
-                </button>
               </div>
 
               {/* Success / Error Alerts */}

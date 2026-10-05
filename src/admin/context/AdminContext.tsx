@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { sendSubscriptionConfirmationEmail } from '../../services/subscriptionEmailService';
 import {
   AdminRoute,
   AdminAccount,
@@ -154,7 +155,24 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   const updatePaymentStatus = (id: string, status: PaymentStatus, note?: string) => {
     setPayments((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status, notes: note || p.notes } : p))
+      prev.map((p) => {
+        if (p.id === id) {
+          if (status === 'approved' && p.status !== 'approved' && p.userEmail) {
+            sendSubscriptionConfirmationEmail({
+              recipientEmail: p.userEmail,
+              recipientName: p.userName,
+              planName: p.planName || 'ChitroKatha VIP All-Access Pass',
+              tier: p.planName?.toLowerCase().includes('vip') ? 'vip' : 'standard',
+              amount: p.amount,
+              trxId: p.trxId,
+              startDate: new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
+              endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
+            });
+          }
+          return { ...p, status, notes: note || p.notes };
+        }
+        return p;
+      })
     );
     if (selectedPayment && selectedPayment.id === id) {
       setSelectedPayment((prev) => (prev ? { ...prev, status, notes: note || prev.notes } : null));

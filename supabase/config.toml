@@ -1,3 +1,6 @@
 # ChitroKatha Supabase Configuration
 [functions.auth-login]
 verify_jwt = false
+
+[functions.subscription-email]
+verify_jwt = false

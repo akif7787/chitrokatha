@@ -3,6 +3,7 @@ import { UserProfile, SubscriptionTier, PaymentRequest, MovieRequest, SupportTic
 import { Profile, UserRole } from '../types/database';
 import { dispatchAppNotification } from './NotificationContext';
 import { isSupabaseConfigured } from '../lib/supabaseClient';
+import { sendSubscriptionConfirmationEmail } from '../services/subscriptionEmailService';
 import {
   signUp,
   signIn,
@@ -11,6 +12,8 @@ import {
   getCurrentUser,
   requestPasswordReset,
   updatePassword,
+  parseAuthUrlTokens,
+  initializeRecoverySessionFromUrl,
   onAuthStateChange,
   verifySignUpOtp,
   resendSignUpOtp,
@@ -103,6 +106,9 @@ interface AuthContextType {
   setIsAuthModalOpen: (open: boolean) => void;
   authModalMode: 'login' | 'register' | 'forgot_password' | 'reset_password';
   setAuthModalMode: (mode: 'login' | 'register' | 'forgot_password' | 'reset_password') => void;
+  authMessage: string | null;
+  setAuthMessage: (msg: string | null) => void;
+  isRecoverySession?: boolean;
   isSubscriptionModalOpen: boolean;
   setIsSubscriptionModalOpen: (open: boolean) => void;
   isProfileModalOpen: boolean;
@@ -113,8 +119,9 @@ interface AuthContextType {
   setIsSupportModalOpen: (open: boolean) => void;
 
   // Modal triggers
-  openLoginModal: () => void;
-  openRegisterModal: () => void;
+  openLoginModal: (message?: string | React.MouseEvent<unknown> | unknown) => void;
+  openRegisterModal: (message?: string | React.MouseEvent<unknown> | unknown) => void;
+  requireAuthForPlayback: (onAllowed?: () => void) => boolean;
   openSubscriptionModal: () => void;
   openProfileModal: () => void;
   openRequestModal: () => void;
@@ -166,6 +173,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authModalMode, setAuthModalMode] = useState<
     'login' | 'register' | 'forgot_password' | 'reset_password'
   >('login');
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [isRecoverySession, setIsRecoverySession] = useState<boolean>(false);
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
@@ -243,9 +252,110 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
+    // 1. Subscribe to auth state changes immediately so no events are missed
+    const { data: authListener } = onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoverySession(true);
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('chitrokatha_in_recovery', 'true');
+        }
+        setAuthModalMode('reset_password');
+        setIsAuthModalOpen(true);
+        return;
+      }
+
+      // If we are currently in password recovery mode, ignore general session activation
+      const inRecovery =
+        isRecoverySession ||
+        (typeof window !== 'undefined' &&
+          window.sessionStorage.getItem('chitrokatha_in_recovery') === 'true') ||
+        parseAuthUrlTokens().isRecovery;
+
+      if (inRecovery) {
+        return;
+      }
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if (session?.user) {
+          // Guard: Never auto-activate unconfirmed user on SIGNED_IN event
+          if (!session.user.email_confirmed_at) {
+            return;
+          }
+
+          const otpVerified = sessionStorage.getItem(`chitrokatha_otp_verified_${session.user.id}`);
+          if (otpVerified === 'true') {
+            await syncProfile(session.user);
+          }
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setSupabaseUser(null);
+        setProfile(null);
+        if (isSupabaseConfigured()) {
+          setUser(null);
+        }
+      }
+    });
+
     async function initSession() {
       try {
         if (isSupabaseConfigured()) {
+          const urlTokens = parseAuthUrlTokens();
+
+          // Check if URL returned an explicit auth error (e.g. otp_expired / access_denied)
+          if (urlTokens.errorCode || urlTokens.error) {
+            if (mounted) {
+              setAuthModalMode('reset_password');
+              setIsAuthModalOpen(true);
+              setAuthError(
+                urlTokens.errorDescription ||
+                'পাসওয়ার্ড রিসেট লিঙ্কটির মেয়াদ শেষ হয়েছে বা ইতোমধ্যেই ব্যবহৃত হয়েছে। দয়া করে নতুন লিঙ্ক অনুরোধ করুন। (Password reset link has expired or has already been used. Please request a new link.)'
+              );
+            }
+            return;
+          }
+
+          // Check if this visit is a password recovery session
+          const isRecoveryIntent =
+            urlTokens.isRecovery ||
+            (typeof window !== 'undefined' &&
+              window.sessionStorage.getItem('chitrokatha_in_recovery') === 'true');
+
+          if (isRecoveryIntent) {
+            if (typeof window !== 'undefined') {
+              window.sessionStorage.setItem('chitrokatha_in_recovery', 'true');
+            }
+            setIsRecoverySession(true);
+
+            // Wait for native Supabase client to finish detecting session from URL
+            let recoverySession = await getCurrentSession();
+            if (!recoverySession) {
+              // Fallback: manually set/exchange from URL tokens if native detection didn't capture it
+              await initializeRecoverySessionFromUrl();
+              recoverySession = await getCurrentSession();
+            }
+
+            if (recoverySession?.user) {
+              if (mounted) {
+                setIsRecoverySession(true);
+                setAuthModalMode('reset_password');
+                setIsAuthModalOpen(true);
+              }
+              // CRITICAL: Return immediately! Do NOT signOut! Do NOT syncProfile!
+              // The user is in password recovery mode, not fully authenticated in the app.
+              return;
+            } else {
+              if (mounted) {
+                setAuthModalMode('reset_password');
+                setIsAuthModalOpen(true);
+                setAuthError('পাসওয়ার্ড রিসেট সেশনের মেয়াদ শেষ হয়েছে বা লিঙ্কটি অকার্যকর। দয়া করে পুনরায় রিসেট লিঙ্ক অনুরোধ করুন। (Password reset session expired or invalid. Please request a new link.)');
+              }
+              return;
+            }
+          }
+
+          // Normal session initialization (not recovery)
           const session = await getCurrentSession();
           if (mounted && session?.user) {
             // Guard: If email is unconfirmed, reject session and sign out
@@ -279,44 +389,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initSession();
 
-    // Check for password recovery hash in URL
-    if (window.location.hash.includes('type=recovery') || window.location.hash.includes('reset-password')) {
-      setAuthModalMode('reset_password');
-      setIsAuthModalOpen(true);
-    }
-
-    // Subscribe to auth state changes
-    const { data: authListener } = onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        if (session?.user) {
-          // Guard: Never auto-activate unconfirmed user on SIGNED_IN event
-          if (!session.user.email_confirmed_at) {
-            return;
-          }
-
-          const otpVerified = sessionStorage.getItem(`chitrokatha_otp_verified_${session.user.id}`);
-          if (otpVerified === 'true') {
-            await syncProfile(session.user);
-          }
-        }
-      } else if (event === 'SIGNED_OUT') {
-        setSupabaseUser(null);
-        setProfile(null);
-        if (isSupabaseConfigured()) {
-          setUser(null);
-        }
-      } else if (event === 'PASSWORD_RECOVERY') {
-        setAuthModalMode('reset_password');
-        setIsAuthModalOpen(true);
-      }
-    });
-
     return () => {
       mounted = false;
       authListener?.subscription?.unsubscribe();
     };
-  }, [syncProfile]);
+  }, [syncProfile, isRecoverySession]);
 
   // Local storage persistence
   useEffect(() => {
@@ -522,20 +599,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Update Password
-  const changePassword = async (newPassword: string) => {
+  const changePassword = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
     setAuthError(null);
     const res = await updatePassword(newPassword);
     if (res.error) {
       setAuthError(res.error);
       return { success: false, error: res.error };
     }
-    setIsAuthModalOpen(false);
+
+    // Success: terminate temporary recovery session to enforce standard login
+    setIsRecoverySession(false);
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('chitrokatha_in_recovery');
+    }
+    await signOut();
+    setSupabaseUser(null);
+    setProfile(null);
+    setUser(null);
+
+    // Clean up URL hash / search params so recovery tokens are removed from browser address bar
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+
+    // Switch to login tab in the modal so user logs in with new credentials
+    setAuthModalMode('login');
+    setIsAuthModalOpen(true);
+
     dispatchAppNotification({
       type: 'system',
       titleBn: '✅ পাসওয়ার্ড সফলভাবে পরিবর্তিত হয়েছে',
       titleEn: '✅ Password Updated Successfully',
-      messageBn: 'আপনার নতুন পাসওয়ার্ড সংরক্ষিত হয়েছে।',
-      messageEn: 'Your new password has been set successfully.'
+      messageBn: 'আপনার নতুন পাসওয়ার্ড সংরক্ষিত হয়েছে। এবার আপনার নতুন পাসওয়ার্ড দিয়ে লগইন করুন।',
+      messageEn: 'Your new password has been set successfully. Please sign in with your new password.'
     });
     return { success: true };
   };
@@ -653,12 +749,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const approvePendingSubscription = () => {
     if (!user?.pendingSubscription) return;
     const plan = user.pendingSubscription.plan;
-    setUser({
+    const updatedUser = {
       ...user,
       tier: plan,
       subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       pendingSubscription: undefined
-    });
+    };
+    setUser(updatedUser);
+
+    if (user.email) {
+      sendSubscriptionConfirmationEmail({
+        recipientEmail: user.email,
+        recipientName: user.name,
+        planName: plan.toUpperCase() === 'VIP' ? 'ChitroKatha VIP All-Access Pass' : 'ChitroKatha Standard Pass',
+        tier: plan,
+        amount: user.pendingSubscription.amount,
+        trxId: user.pendingSubscription.trxId,
+        startDate: new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
+      }).catch((err) => console.warn('[SubscriptionEmail] Failed to send email:', err));
+    }
+
     dispatchAppNotification({
       type: 'system',
       titleBn: '🎉 ভিআইপি মেম্বারশিপ সক্রিয় হয়েছে!',
@@ -678,7 +789,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const upgradeSubscription = (tier: SubscriptionTier) => {
     if (!user) return;
-    setUser({
+    const updatedUser = {
       ...user,
       tier,
       subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -686,7 +797,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isPaused: false,
       pausedUntil: undefined,
       pauseDays: undefined
-    });
+    };
+    setUser(updatedUser);
+
+    if (user.email) {
+      sendSubscriptionConfirmationEmail({
+        recipientEmail: user.email,
+        recipientName: user.name,
+        planName: tier === 'vip' ? 'ChitroKatha VIP All-Access Pass' : 'ChitroKatha Standard Pass',
+        tier,
+        amount: tier === 'vip' ? 99 : 49,
+        startDate: new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' }),
+      }).catch((err) => console.warn('[SubscriptionEmail] Failed to send email:', err));
+    }
+
     dispatchAppNotification({
       type: 'system',
       titleBn: '🎉 ভিআইপি মেম্বারশিপ সক্রিয় হয়েছে!',
@@ -817,6 +942,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     (profile?.status === 'active' || user?.status === 'active') &&
     !pendingAuth;
 
+  const isLoggedIn = isSupabaseConfigured()
+    ? Boolean(
+        user &&
+        user.status === 'active' &&
+        (supabaseUser?.email_confirmed_at || !supabaseUser) &&
+        !pendingAuth
+      )
+    : Boolean(user && !pendingAuth);
+
+  const openLoginModal = useCallback((message?: unknown) => {
+    setAuthError(null);
+    setAuthMessage(typeof message === 'string' ? message : null);
+    setAuthModalMode('login');
+    setIsAuthModalOpen(true);
+  }, []);
+
+  const openRegisterModal = useCallback((message?: unknown) => {
+    setAuthError(null);
+    setAuthMessage(typeof message === 'string' ? message : null);
+    setAuthModalMode('register');
+    setIsAuthModalOpen(true);
+  }, []);
+
+  const requireAuthForPlayback = useCallback((onAllowed?: () => void): boolean => {
+    if (isLoggedIn) {
+      if (onAllowed) onAllowed();
+      return true;
+    }
+    openLoginModal('ভিডিও দেখতে আগে একটি অ্যাকাউন্ট তৈরি করুন বা লগ ইন করুন। (Please create an account or log in to watch this video.)');
+    return false;
+  }, [isLoggedIn, openLoginModal]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -826,14 +983,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role,
         isAdmin,
         isSuperAdmin,
-        isLoggedIn: isSupabaseConfigured()
-          ? Boolean(
-              user &&
-              user.status === 'active' &&
-              (supabaseUser?.email_confirmed_at || !supabaseUser) &&
-              !pendingAuth
-            )
-          : Boolean(user && !pendingAuth),
+        isLoggedIn,
         isPremium,
         tier: currentTier,
         isLoading,
@@ -868,6 +1018,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsAuthModalOpen,
         authModalMode,
         setAuthModalMode,
+        authMessage,
+        setAuthMessage,
+        isRecoverySession,
         isSubscriptionModalOpen,
         setIsSubscriptionModalOpen,
         isProfileModalOpen,
@@ -876,16 +1029,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsRequestModalOpen,
         isSupportModalOpen,
         setIsSupportModalOpen,
-        openLoginModal: () => {
-          setAuthError(null);
-          setAuthModalMode('login');
-          setIsAuthModalOpen(true);
-        },
-        openRegisterModal: () => {
-          setAuthError(null);
-          setAuthModalMode('register');
-          setIsAuthModalOpen(true);
-        },
+        openLoginModal,
+        openRegisterModal,
+        requireAuthForPlayback,
         openSubscriptionModal: () => setIsSubscriptionModalOpen(true),
         openProfileModal: () => setIsProfileModalOpen(true),
         openRequestModal: () => setIsRequestModalOpen(true),

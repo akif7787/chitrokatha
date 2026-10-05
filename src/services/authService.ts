@@ -25,6 +25,15 @@ export function formatAuthError(err: AuthError | Error | null): string {
   if (msg.includes('rate limit')) {
     return 'অনেক বেশি অনুরোধ করা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন। (Too many attempts. Try again later)';
   }
+  if (
+    msg.includes('auth session missing') ||
+    msg.includes('session missing') ||
+    msg.includes('recovery token') ||
+    msg.includes('token is expired') ||
+    msg.includes('token has expired')
+  ) {
+    return 'পাসওয়ার্ড রিসেট সেশনের মেয়াদ শেষ হয়েছে বা লিঙ্কটি অকার্যকর। দয়া করে পুনরায় রিসেট লিঙ্ক অনুরোধ করুন। (Password reset session expired or invalid. Please request a new link.)';
+  }
   return err.message;
 }
 
@@ -131,6 +140,96 @@ export async function getCurrentUser(): Promise<User | null> {
   }
 }
 
+export interface AuthUrlTokens {
+  accessToken?: string;
+  refreshToken?: string;
+  type?: string;
+  code?: string;
+  error?: string;
+  errorCode?: string;
+  errorDescription?: string;
+  isRecovery: boolean;
+}
+
+/**
+ * Universal auth URL parser that extracts recovery parameters from
+ * any combination of query strings and hash fragments (including double hash links and error redirects).
+ */
+export function parseAuthUrlTokens(urlHref?: string): AuthUrlTokens {
+  if (typeof window === 'undefined' && !urlHref) {
+    return { isRecovery: false };
+  }
+  const href = urlHref || window.location.href;
+  const tokens: Record<string, string> = {};
+  const regex = /[#&?]([a-zA-Z0-9_]+)=([^&#]+)/g;
+  let match;
+  while ((match = regex.exec(href)) !== null) {
+    try {
+      tokens[match[1]] = decodeURIComponent(match[2].replace(/\+/g, ' '));
+    } catch {
+      tokens[match[1]] = match[2];
+    }
+  }
+
+  const inRecoverySession =
+    typeof window !== 'undefined' &&
+    window.sessionStorage.getItem('chitrokatha_in_recovery') === 'true';
+
+  const isRecovery =
+    tokens['type'] === 'recovery' ||
+    href.includes('type=recovery') ||
+    href.includes('reset-password') ||
+    href.includes('reset_password') ||
+    Boolean((tokens['error'] || tokens['error_code']) && (href.includes('recovery') || inRecoverySession)) ||
+    Boolean(tokens['code'] && (href.includes('reset') || inRecoverySession));
+
+  return {
+    accessToken: tokens['access_token'],
+    refreshToken: tokens['refresh_token'],
+    type: tokens['type'],
+    code: tokens['code'],
+    error: tokens['error'],
+    errorCode: tokens['error_code'],
+    errorDescription: tokens['error_description'],
+    isRecovery
+  };
+}
+
+/**
+ * Explicitly initialize or exchange recovery session from URL tokens
+ */
+export async function initializeRecoverySessionFromUrl(): Promise<boolean> {
+  if (!isSupabaseConfigured() || typeof window === 'undefined') return false;
+
+  const tokens = parseAuthUrlTokens();
+  if (!tokens.isRecovery) return false;
+
+  try {
+    // If tokens are present in URL hash or query, set or exchange them
+    if (tokens.accessToken && tokens.refreshToken) {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken
+      });
+      if (!error && data.session) {
+        return true;
+      }
+    } else if (tokens.code) {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(tokens.code);
+      if (!error && data.session) {
+        return true;
+      }
+    }
+
+    // Check if session was already detected by supabase-js
+    const { data } = await supabase.auth.getSession();
+    return Boolean(data.session);
+  } catch (err) {
+    console.error('Failed to initialize recovery session from URL:', err);
+    return false;
+  }
+}
+
 export async function requestPasswordReset(email: string): Promise<AuthResult<void>> {
   if (!isSupabaseConfigured()) {
     return {
@@ -140,8 +239,17 @@ export async function requestPasswordReset(email: string): Promise<AuthResult<vo
   }
 
   try {
+    const isLocalhost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    // Using base origin without hash avoids double-hash (#reset-password#access_token=) issues.
+    // GoTrue appends #access_token=...&refresh_token=...&type=recovery cleanly.
+    const redirectUrl = isLocalhost
+      ? `${window.location.origin}/`
+      : 'https://chitrokatha.online/';
+
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/#reset-password`
+      redirectTo: redirectUrl
     });
 
     if (error) {
@@ -163,6 +271,22 @@ export async function updatePassword(newPassword: string): Promise<AuthResult<vo
   }
 
   try {
+    // Check if session exists; if not, attempt to initialize from URL tokens as fallback
+    let currentSession = await getCurrentSession();
+    if (!currentSession) {
+      const recovered = await initializeRecoverySessionFromUrl();
+      if (recovered) {
+        currentSession = await getCurrentSession();
+      }
+    }
+
+    if (!currentSession) {
+      return {
+        data: null,
+        error: 'পাসওয়ার্ড রিসেট সেশনের মেয়াদ শেষ হয়েছে বা লিঙ্কটি অকার্যকর। দয়া করে পুনরায় রিসেট লিঙ্ক অনুরোধ করুন। (Password reset session expired or invalid. Please request a new link.)'
+      };
+    }
+
     const { error } = await supabase.auth.updateUser({
       password: newPassword
     });

@@ -41,7 +41,7 @@ import { Film, Sparkles, Crown, Clapperboard, Tv, Play } from 'lucide-react';
 
 function ChitroKathaApp() {
   const { t, language } = useLanguage();
-  const { isPremium, openSubscriptionModal } = useAuth();
+  const { isPremium, openSubscriptionModal, requireAuthForPlayback } = useAuth();
 
   // Theatrical Intro on Load / Refresh
   const [showIntro, setShowIntro] = useState(true);
@@ -78,6 +78,7 @@ function ChitroKathaApp() {
 
   // Player Handlers
   const handleOpenPlay = (movie: Movie, mode: 'stream' | 'trailer' = 'trailer') => {
+    if (!requireAuthForPlayback()) return;
     setSelectedMovie(movie);
     setPlayerInitialMode(mode);
     recordMovieInteraction(movie);

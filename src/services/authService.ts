@@ -202,11 +202,25 @@ export async function verifySignUpOtp(
   }
 
   try {
-    const { data, error } = await supabase.auth.verifyOtp({
+    // Primary verification using type: 'email'
+    let { data, error } = await supabase.auth.verifyOtp({
       email: email.trim(),
       token: token.trim(),
-      type: 'signup'
+      type: 'email'
     });
+
+    // Fallback if GoTrue configuration specifically expects 'signup'
+    if (error && (error.message.includes('type') || error.status === 400)) {
+      const fallback = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: token.trim(),
+        type: 'signup'
+      });
+      if (!fallback.error) {
+        data = fallback.data;
+        error = null;
+      }
+    }
 
     if (error) {
       return { data: null, error: formatAuthError(error) };

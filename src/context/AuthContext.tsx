@@ -248,6 +248,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isSupabaseConfigured()) {
           const session = await getCurrentSession();
           if (mounted && session?.user) {
+            // Guard: If email is unconfirmed, reject session and sign out
+            if (!session.user.email_confirmed_at) {
+              await signOut();
+              setSupabaseUser(null);
+              setProfile(null);
+              setUser(null);
+              return;
+            }
+
             // Check if OTP verified flag is present in sessionStorage for this session
             const otpVerified = sessionStorage.getItem(`chitrokatha_otp_verified_${session.user.id}`);
             if (otpVerified === 'true') {
@@ -281,6 +290,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!mounted) return;
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         if (session?.user) {
+          // Guard: Never auto-activate unconfirmed user on SIGNED_IN event
+          if (!session.user.email_confirmed_at) {
+            return;
+          }
+
           const otpVerified = sessionStorage.getItem(`chitrokatha_otp_verified_${session.user.id}`);
           if (otpVerified === 'true') {
             await syncProfile(session.user);
@@ -337,6 +351,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: res.error };
     }
 
+    // Guard: Under no circumstances should unverified signup activate a session.
+    // If Supabase returned an unexpected pre-verification session, discard it.
+    if (res.data?.session) {
+      await signOut();
+    }
+
     // Set pending signup state to prompt for OTP verification
     setPendingAuth({
       email: email.trim(),
@@ -344,9 +364,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       phone: phone?.trim(),
       password,
       tempUser: res.data?.user || null,
-      tempSession: res.data?.session || null,
+      tempSession: null,
       mode: 'signup'
     });
+
+    // Explicitly guarantee the AuthModal remains open for OTP entry
+    setIsAuthModalOpen(true);
 
     return { success: true, requireOtp: true };
   };
@@ -803,7 +826,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role,
         isAdmin,
         isSuperAdmin,
-        isLoggedIn: Boolean(user && !pendingAuth),
+        isLoggedIn: isSupabaseConfigured()
+          ? Boolean(
+              user &&
+              user.status === 'active' &&
+              (supabaseUser?.email_confirmed_at || !supabaseUser) &&
+              !pendingAuth
+            )
+          : Boolean(user && !pendingAuth),
         isPremium,
         tier: currentTier,
         isLoading,

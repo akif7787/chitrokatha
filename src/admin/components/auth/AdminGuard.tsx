@@ -13,6 +13,7 @@ import {
   Mail,
   AlertTriangle
 } from 'lucide-react';
+import { OtpVerificationView } from '../../../components/OtpVerificationView';
 
 interface AdminGuardProps {
   children: React.ReactNode;
@@ -25,6 +26,11 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
     isAdmin,
     user,
     role,
+    pendingAuth,
+    isOtpRequired,
+    submitOtp,
+    resendOtp,
+    cancelPendingAuth,
     signInUser,
     signOutUser,
     authError,
@@ -103,49 +109,61 @@ export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
             </div>
           )}
 
-          <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-zinc-400" />
-                <span>Admin Email</span>
-              </label>
-              <input
-                type="email"
-                required
-                value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="admin@chitrokatha.com"
-                className="w-full px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
+          {isOtpRequired && pendingAuth ? (
+            <div className="mt-6">
+              <OtpVerificationView
+                email={pendingAuth.email}
+                purpose={pendingAuth.mode}
+                onVerify={submitOtp}
+                onResend={resendOtp}
+                onBack={cancelPendingAuth}
               />
             </div>
+          ) : (
+            <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Admin Email</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="admin@chitrokatha.com"
+                  className="w-full px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
-                <KeyRound className="w-3.5 h-3.5 text-zinc-400" />
-                <span>Password</span>
-              </label>
-              <input
-                type="password"
-                required
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Password</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-950/50 flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <span>Authenticate & Access Console</span>
-              )}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-950/50 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <span>Authenticate & Access Console</span>
+                )}
+              </button>
+            </form>
+          )}
 
           <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between text-xs text-zinc-400">
             <a

@@ -1,0 +1,3 @@
+# ChitroKatha Supabase Configuration
+[functions.auth-login]
+verify_jwt = false

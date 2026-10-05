@@ -11,10 +11,26 @@ import {
   getCurrentUser,
   requestPasswordReset,
   updatePassword,
-  onAuthStateChange
+  onAuthStateChange,
+  verifySignUpOtp,
+  resendSignUpOtp,
+  requestLoginChallenge,
+  verifyLoginOtp,
+  resendLoginOtp,
+  requestLoginOtp
 } from '../services/authService';
 import { getProfile, updateProfile } from '../services/profileService';
 import { User, Session } from '@supabase/supabase-js';
+
+export interface PendingAuth {
+  email: string;
+  fullName?: string;
+  phone?: string;
+  password?: string;
+  tempUser?: User | null;
+  tempSession?: Session | null;
+  mode: 'signup' | 'login';
+}
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -30,9 +46,16 @@ interface AuthContextType {
   authError: string | null;
   setAuthError: (err: string | null) => void;
 
+  // 2-Step OTP Authentication State
+  pendingAuth: PendingAuth | null;
+  isOtpRequired: boolean;
+  submitOtp: (code: string) => Promise<{ success: boolean; error?: string }>;
+  resendOtp: () => Promise<{ success: boolean; error?: string }>;
+  cancelPendingAuth: () => void;
+
   // Supabase Auth Methods
-  signUpUser: (email: string, password: string, fullName: string, phone?: string) => Promise<{ success: boolean; error?: string }>;
-  signInUser: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signUpUser: (email: string, password: string, fullName: string, phone?: string) => Promise<{ success: boolean; error?: string; requireOtp?: boolean }>;
+  signInUser: (email: string, password: string) => Promise<{ success: boolean; error?: string; requireOtp?: boolean }>;
   signOutUser: () => Promise<void>;
   resetPasswordEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
   changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
@@ -148,6 +171,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
 
+  // 2-Step OTP Authentication State
+  const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null);
+
+  const isOtpRequired = Boolean(pendingAuth);
+
+  const cancelPendingAuth = useCallback(() => {
+    // If there was a temporary Supabase session created during password step, ensure it is cleared
+    if (pendingAuth?.mode === 'login' && isSupabaseConfigured()) {
+      signOut();
+    }
+    setPendingAuth(null);
+    setAuthError(null);
+  }, [pendingAuth]);
+
   // Synchronize Supabase User Profile
   const syncProfile = useCallback(async (sUser: User | null) => {
     if (!sUser) {
@@ -211,7 +248,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isSupabaseConfigured()) {
           const session = await getCurrentSession();
           if (mounted && session?.user) {
-            await syncProfile(session.user);
+            // Check if OTP verified flag is present in sessionStorage for this session
+            const otpVerified = sessionStorage.getItem(`chitrokatha_otp_verified_${session.user.id}`);
+            if (otpVerified === 'true') {
+              await syncProfile(session.user);
+            } else {
+              // Session expired / unverified after restart: sign out to require fresh login + OTP
+              await signOut();
+              setSupabaseUser(null);
+              setProfile(null);
+              setUser(null);
+            }
           }
         }
       } catch (err) {
@@ -234,7 +281,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!mounted) return;
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         if (session?.user) {
-          await syncProfile(session.user);
+          const otpVerified = sessionStorage.getItem(`chitrokatha_otp_verified_${session.user.id}`);
+          if (otpVerified === 'true') {
+            await syncProfile(session.user);
+          }
         }
       } else if (event === 'SIGNED_OUT') {
         setSupabaseUser(null);
@@ -271,11 +321,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(TICKETS_STORAGE_KEY, JSON.stringify(supportTickets));
   }, [supportTickets]);
 
-  // Supabase Sign Up
+  // ----------------------------------------------------------------------------
+  // Step 1: Sign Up -> Triggers OTP step
+  // ----------------------------------------------------------------------------
   const signUpUser = async (email: string, password: string, fullName: string, phone?: string) => {
     setAuthError(null);
     if (!isSupabaseConfigured()) {
-      // Local fallback
       register(fullName, email, phone);
       return { success: true };
     }
@@ -286,58 +337,144 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: res.error };
     }
 
-    if (res.data?.user) {
-      await syncProfile(res.data.user);
-      setIsAuthModalOpen(false);
-      dispatchAppNotification({
-        type: 'system',
-        titleBn: '🎉 অ্যাকাউন্ট তৈরি সম্পন্ন হয়েছে!',
-        titleEn: '🎉 Account Created Successfully!',
-        messageBn: 'চিত্রকথায় আপনাকে স্বাগতম। আপনার পছন্দের সিনেমা ও নাটক উপভোগ করুন।',
-        messageEn: 'Welcome to ChitroKatha. Enjoy unlimited cinema discovery!'
-      });
-      return { success: true };
-    }
+    // Set pending signup state to prompt for OTP verification
+    setPendingAuth({
+      email: email.trim(),
+      fullName: fullName.trim(),
+      phone: phone?.trim(),
+      password,
+      tempUser: res.data?.user || null,
+      tempSession: res.data?.session || null,
+      mode: 'signup'
+    });
 
-    return { success: false, error: 'Registration failed. Please try again.' };
+    return { success: true, requireOtp: true };
   };
 
-  // Supabase Sign In
+  // ----------------------------------------------------------------------------
+  // Step 1: Sign In (Email + Password) -> Triggers OTP generation & step 2
+  // Server-side validates credentials; browser receives NO session before OTP.
+  // ----------------------------------------------------------------------------
   const signInUser = async (email: string, password: string) => {
     setAuthError(null);
     if (!isSupabaseConfigured()) {
-      // Local fallback
       login(email);
       return { success: true };
     }
 
-    const res = await signIn(email, password);
-    if (res.error) {
-      setAuthError(res.error);
-      return { success: false, error: res.error };
+    // Step 1: Send credentials to server for validation & OTP generation
+    const challengeRes = await requestLoginChallenge(email, password);
+    if (challengeRes.error) {
+      setAuthError(challengeRes.error);
+      return { success: false, error: challengeRes.error };
     }
 
-    if (res.data?.user) {
-      await syncProfile(res.data.user);
+    // Set pending login state (User is NOT logged in yet; no session exists in browser)
+    setPendingAuth({
+      email: email.trim(),
+      password,
+      mode: 'login'
+    });
+
+    return { success: true, requireOtp: true };
+  };
+
+  // ----------------------------------------------------------------------------
+  // Step 2: Submit OTP (for either signup or login)
+  // ----------------------------------------------------------------------------
+  const submitOtp = async (code: string): Promise<{ success: boolean; error?: string }> => {
+    if (!pendingAuth) {
+      return { success: false, error: 'No authentication in progress.' };
+    }
+
+    setAuthError(null);
+
+    if (pendingAuth.mode === 'signup') {
+      // 1. Verify signup OTP via Supabase
+      const res = await verifySignUpOtp(pendingAuth.email, code);
+      if (res.error) {
+        return { success: false, error: res.error };
+      }
+
+      if (res.data?.user) {
+        sessionStorage.setItem(`chitrokatha_otp_verified_${res.data.user.id}`, 'true');
+        await syncProfile(res.data.user);
+        setPendingAuth(null);
+        setIsAuthModalOpen(false);
+        dispatchAppNotification({
+          type: 'system',
+          titleBn: '🎉 অ্যাকাউন্ট সক্রিয় হয়েছে!',
+          titleEn: '🎉 Account Activated!',
+          messageBn: 'চিত্রকথায় আপনাকে স্বাগতম। আপনার পছন্দের সিনেমা ও নাটক উপভোগ করুন।',
+          messageEn: 'Welcome to ChitroKatha. Enjoy unlimited cinema discovery!'
+        });
+        return { success: true };
+      }
+      return { success: false, error: 'Verification failed.' };
+    } else {
+      // 2. Verify login OTP via Edge Function / RPC and acquire Supabase session
+      const otpVerifyRes = await verifyLoginOtp(pendingAuth.email, code);
+      if (otpVerifyRes.error) {
+        return { success: false, error: otpVerifyRes.error };
+      }
+
+      // Successful OTP verification! Session is established natively
+      const currentUser = otpVerifyRes.data?.user || (await getCurrentUser());
+      if (currentUser) {
+        sessionStorage.setItem(`chitrokatha_otp_verified_${currentUser.id}`, 'true');
+        await syncProfile(currentUser);
+      }
+
+      setPendingAuth(null);
       setIsAuthModalOpen(false);
       dispatchAppNotification({
         type: 'system',
         titleBn: '👋 স্বাগতম!',
         titleEn: '👋 Welcome back!',
-        messageBn: 'আপনি সফলভাবে চিত্রকথায় লগইন করেছেন।',
-        messageEn: 'You have signed in to ChitroKatha successfully.'
+        messageBn: 'ওটিপি যাচাই সফল হয়েছে। আপনি চিত্রকথায় প্রবেশ করেছেন।',
+        messageEn: 'Two-step verification successful. Welcome to ChitroKatha!'
       });
       return { success: true };
     }
-
-    return { success: false, error: 'Sign in failed.' };
   };
 
-  // Supabase Sign Out
+  // ----------------------------------------------------------------------------
+  // Resend OTP
+  // ----------------------------------------------------------------------------
+  const resendOtp = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!pendingAuth) {
+      return { success: false, error: 'No active verification in progress.' };
+    }
+
+    if (pendingAuth.mode === 'signup') {
+      // Resend signup confirmation OTP via Supabase Auth
+      const res = await resendSignUpOtp(pendingAuth.email);
+      if (res.error) {
+        return { success: false, error: res.error };
+      }
+      return { success: true };
+    } else {
+      // Resend login OTP via server Edge Function
+      const res = await resendLoginOtp(pendingAuth.email, pendingAuth.password);
+      if (res.error) {
+        return { success: false, error: res.error };
+      }
+      return { success: true };
+    }
+  };
+
+  // Supabase Sign Out: fully clears session and OTP validation tokens
   const signOutUser = async () => {
+    if (user?.id) {
+      sessionStorage.removeItem(`chitrokatha_otp_verified_${user.id}`);
+    }
+    if (supabaseUser?.id) {
+      sessionStorage.removeItem(`chitrokatha_otp_verified_${supabaseUser.id}`);
+    }
     if (isSupabaseConfigured()) {
       await signOut();
     }
+    setPendingAuth(null);
     setSupabaseUser(null);
     setProfile(null);
     setUser(null);
@@ -648,8 +785,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isPremium = (user?.tier === 'standard' || user?.tier === 'vip') && !user?.isPaused;
   const currentTier: SubscriptionTier = user?.tier || 'free';
   const role: UserRole = profile?.role || user?.role || 'user';
-  const isAdmin = role === 'admin' || role === 'super_admin';
-  const isSuperAdmin = role === 'super_admin';
+  const isAdmin =
+    (role === 'admin' || role === 'super_admin') &&
+    (profile?.status === 'active' || user?.status === 'active') &&
+    !pendingAuth;
+  const isSuperAdmin =
+    role === 'super_admin' &&
+    (profile?.status === 'active' || user?.status === 'active') &&
+    !pendingAuth;
 
   return (
     <AuthContext.Provider
@@ -660,12 +803,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role,
         isAdmin,
         isSuperAdmin,
-        isLoggedIn: Boolean(user),
+        isLoggedIn: Boolean(user && !pendingAuth),
         isPremium,
         tier: currentTier,
         isLoading,
         authError,
         setAuthError,
+        pendingAuth,
+        isOtpRequired,
+        submitOtp,
+        resendOtp,
+        cancelPendingAuth,
         signUpUser,
         signInUser,
         signOutUser,

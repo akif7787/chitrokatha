@@ -30,7 +30,7 @@ export interface UserProfile {
   pauseDays?: number;
   cancellationReason?: string;
   role?: 'user' | 'admin' | 'super_admin';
-  status?: 'active' | 'suspended' | 'banned';
+  status?: 'active' | 'pending' | 'unverified' | 'suspended' | 'banned';
 }
 
 export interface MovieRequest {

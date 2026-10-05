@@ -185,3 +185,275 @@ export function onAuthStateChange(
   }
   return supabase.auth.onAuthStateChange(callback);
 }
+
+// ============================================================================
+// 2-Step Authentication & Email OTP Methods
+// ============================================================================
+
+/**
+ * Verify Signup Email OTP via Supabase Native Auth
+ */
+export async function verifySignUpOtp(
+  email: string,
+  token: string
+): Promise<AuthResult<{ user: User | null; session: Session | null }>> {
+  if (!isSupabaseConfigured()) {
+    return { data: null, error: 'Supabase configuration is missing.' };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: token.trim(),
+      type: 'signup'
+    });
+
+    if (error) {
+      return { data: null, error: formatAuthError(error) };
+    }
+
+    return { data, error: null };
+  } catch (err: any) {
+    return { data: null, error: formatAuthError(err) };
+  }
+}
+
+/**
+ * Resend Signup Confirmation Email OTP via Supabase Native Auth
+ */
+export async function resendSignUpOtp(
+  email: string
+): Promise<AuthResult<void>> {
+  if (!isSupabaseConfigured()) {
+    return { data: null, error: 'Supabase configuration is missing.' };
+  }
+
+  try {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim()
+    });
+
+    if (error) {
+      return { data: null, error: formatAuthError(error) };
+    }
+
+    return { data: undefined, error: null };
+  } catch (err: any) {
+    return { data: null, error: formatAuthError(err) };
+  }
+}
+
+/**
+ * Step 1: Validate Email + Password and request 6-digit Login OTP
+ * The server validates credentials, generates/hashes OTP, and sends the branded email.
+ * NO session or OTP is returned to the client.
+ */
+export async function requestLoginChallenge(
+  email: string,
+  password: string
+): Promise<AuthResult<{ success: boolean; message?: string; cooldown_seconds?: number }>> {
+  if (!isSupabaseConfigured()) {
+    return { data: null, error: 'Supabase configuration is missing.' };
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  try {
+    // 1. Invoke Supabase Edge Function: auth-login
+    const { data, error } = await supabase.functions.invoke('auth-login', {
+      body: {
+        action: 'challenge',
+        email: cleanEmail,
+        password
+      }
+    });
+
+    if (!error && data) {
+      if (!data.success) {
+        return { data: null, error: data.error || 'Failed to initialize verification challenge.' };
+      }
+      return { data: { success: true, message: data.message, cooldown_seconds: data.cooldown_seconds }, error: null };
+    }
+
+    // 2. Fallback if Edge Function is not yet deployed (local offline / dev fallback)
+    // Validate password via Supabase Auth without leaking session to client state
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password
+    });
+
+    if (authError || !authData.user) {
+      return { data: null, error: formatAuthError(authError) };
+    }
+
+    // Immediately sign out from client so pre-OTP session is NOT usable in browser
+    await supabase.auth.signOut();
+
+    // Call database RPC to record challenge hash if available
+    const { data: rpcData, error: rpcError } = await (supabase.rpc as any)('request_login_otp', {
+      user_email: cleanEmail
+    });
+
+    if (rpcError) {
+      console.warn('RPC request_login_otp notice:', rpcError.message);
+    }
+
+    return {
+      data: {
+        success: true,
+        message: rpcData?.message || 'Verification challenge initialized.',
+        cooldown_seconds: 60
+      },
+      error: null
+    };
+  } catch (err: any) {
+    return { data: null, error: err.message || 'Login challenge failed.' };
+  }
+}
+
+/**
+ * Step 2: Verify Login OTP and establish authentic Supabase session
+ */
+export async function verifyLoginOtp(
+  email: string,
+  code: string
+): Promise<AuthResult<{ user: User | null; session: Session | null }>> {
+  if (!isSupabaseConfigured()) {
+    return { data: null, error: 'Supabase configuration is missing.' };
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanCode = code.trim();
+
+  try {
+    // 1. Invoke Supabase Edge Function: auth-login
+    const { data, error } = await supabase.functions.invoke('auth-login', {
+      body: {
+        action: 'verify',
+        email: cleanEmail,
+        code: cleanCode
+      }
+    });
+
+    if (!error && data) {
+      if (!data.success) {
+        return { data: null, error: data.error || 'Incorrect verification code.' };
+      }
+
+      // If Edge Function returned single-use magic link token_hash, verify it natively
+      if (data.token_hash) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.verifyOtp({
+          token_hash: data.token_hash,
+          type: 'email'
+        });
+
+        if (sessionError) {
+          return { data: null, error: formatAuthError(sessionError) };
+        }
+
+        return { data: sessionData, error: null };
+      }
+
+      return { data: { user: null, session: null }, error: null };
+    }
+
+    // 2. Fallback to database RPC verification
+    const { data: rpcData, error: rpcError } = await (supabase.rpc as any)('verify_login_otp', {
+      user_email: cleanEmail,
+      candidate_code: cleanCode
+    });
+
+    if (rpcError) {
+      return { data: null, error: rpcError.message || 'Verification failed.' };
+    }
+
+    if (rpcData && !rpcData.success) {
+      return { data: null, error: rpcData.error || 'Incorrect verification code.' };
+    }
+
+    const currentUser = await getCurrentUser();
+    const currentSession = await getCurrentSession();
+    return { data: { user: currentUser, session: currentSession }, error: null };
+  } catch (err: any) {
+    return { data: null, error: err.message || 'Verification failed.' };
+  }
+}
+
+/**
+ * Resend Login OTP Code
+ */
+export async function resendLoginOtp(
+  email: string,
+  password?: string
+): Promise<AuthResult<{ success: boolean; message?: string }>> {
+  if (!isSupabaseConfigured()) {
+    return { data: null, error: 'Supabase configuration is missing.' };
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  try {
+    const { data, error } = await supabase.functions.invoke('auth-login', {
+      body: {
+        action: 'resend',
+        email: cleanEmail,
+        password
+      }
+    });
+
+    if (!error && data) {
+      if (!data.success) {
+        return { data: null, error: data.error || 'Failed to resend verification code.' };
+      }
+      return { data: { success: true, message: data.message }, error: null };
+    }
+
+    // Fallback: re-trigger challenge
+    if (password) {
+      return await requestLoginChallenge(cleanEmail, password);
+    }
+
+    return { data: { success: true }, error: null };
+  } catch (err: any) {
+    return { data: null, error: err.message || 'Failed to resend code.' };
+  }
+}
+
+/**
+ * Backward compatibility: requestLoginOtp
+ */
+export async function requestLoginOtp(
+  email: string
+): Promise<AuthResult<{ success: boolean; message?: string; expires_in_seconds?: number; cooldown_seconds?: number; cooldown_remaining?: number }>> {
+  if (!isSupabaseConfigured()) {
+    return { data: null, error: 'Supabase configuration is missing.' };
+  }
+
+  try {
+    const { data, error } = await (supabase.rpc as any)('request_login_otp', {
+      user_email: email.trim()
+    });
+
+    if (error) {
+      return { data: null, error: error.message || 'Failed to generate verification code.' };
+    }
+
+    if (data && !data.success) {
+      return { data: null, error: data.error || 'Failed to generate verification code.' };
+    }
+
+    return {
+      data: {
+        success: true,
+        message: data?.message,
+        expires_in_seconds: data?.expires_in_seconds,
+        cooldown_seconds: data?.cooldown_seconds,
+        cooldown_remaining: data?.cooldown_remaining
+      },
+      error: null
+    };
+  } catch (err: any) {
+    return { data: null, error: err.message || 'Failed to request verification code.' };
+  }
+}

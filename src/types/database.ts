@@ -1,5 +1,5 @@
 export type UserRole = 'user' | 'admin' | 'super_admin';
-export type UserStatus = 'active' | 'suspended' | 'banned';
+export type UserStatus = 'active' | 'pending' | 'unverified' | 'suspended' | 'banned';
 
 export interface Profile {
   id: string;
@@ -112,6 +112,40 @@ export interface Database {
         Insert: Omit<AdminActivityLog, 'id' | 'created_at'>;
         Update: Partial<AdminActivityLog>;
       };
+      auth_otp_codes: {
+        Row: AuthOtpCode;
+        Insert: Omit<AuthOtpCode, 'id' | 'created_at'>;
+        Update: Partial<AuthOtpCode>;
+      };
     };
   };
+}
+
+export type OtpPurpose = 'signup' | 'login';
+
+export interface AuthOtpCode {
+  id: string;
+  email: string;
+  otp_hash: string;
+  purpose: OtpPurpose;
+  attempts_left: number;
+  expires_at: string;
+  consumed_at: string | null;
+  created_at: string;
+}
+
+export interface RequestOtpResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  expires_in_seconds?: number;
+  cooldown_seconds?: number;
+  cooldown_remaining?: number;
+}
+
+export interface VerifyOtpResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  attempts_left?: number;
 }

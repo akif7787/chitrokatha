@@ -30,7 +30,7 @@ import {
   fetchUserLatestPayment,
   PAYMENT_STATUS_EVENT
 } from '../services/paymentService';
-import { submitSupportMessage } from '../services/supportService';
+import { submitSupportMessage, notifySupportChanged } from '../services/supportService';
 import { User, Session } from '@supabase/supabase-js';
 
 export interface PendingAuth {
@@ -581,6 +581,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
           () => {
             syncSubscriptionAndPayments(currentUserId);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'user_notifications',
+            filter: `user_id=eq.${currentUserId}`
+          },
+          (payload: any) => {
+            if (payload?.new) {
+              dispatchAppNotification({
+                type: 'system',
+                titleBn: payload.new.title,
+                titleEn: payload.new.title,
+                messageBn: payload.new.message,
+                messageEn: payload.new.message,
+              });
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'support_messages',
+            filter: `user_id=eq.${currentUserId}`
+          },
+          () => {
+            notifySupportChanged();
           }
         )
         .subscribe();

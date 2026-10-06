@@ -34,10 +34,10 @@ import { BestOfferModal } from './components/BestOfferModal';
 import { CinematicIntro } from './components/CinematicIntro';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { RecentlyWatchedRow } from './components/RecentlyWatchedRow';
-import { GenreCloud } from './components/GenreCloud';
 import { ComingSoonSection } from './components/ComingSoonSection';
 import { recordMovieInteraction } from './services/recentlyWatched';
 import { Footer } from './components/Footer';
+import { SponsorBannerPlacement } from './components/SponsorBannerPlacement';
 import { Film, Sparkles, Crown, Clapperboard, Tv, Play } from 'lucide-react';
 
 function ChitroKathaApp() {
@@ -252,13 +252,6 @@ function ChitroKathaApp() {
               onPlay={(m) => handleOpenPlay(m, 'stream')}
             />
 
-            {/* Interactive D3 Dynamic Genre Cloud */}
-            <GenreCloud
-              movies={allMovies}
-              onSelectMovie={handleOpenDetails}
-              onPlayMovie={(m) => handleOpenPlay(m, 'stream')}
-            />
-
             {/* Star Cast & Actor/Actress Row */}
             <ActorSection
               onSelectActor={(actor) => setSelectedActor(actor)}
@@ -430,6 +423,9 @@ function ChitroKathaApp() {
                 onPlayTrailer={(m) => handleOpenPlay(m, 'trailer')}
               />
             </div>
+
+            {/* SPONSOR CAMPAIGN PLACEMENT */}
+            <SponsorBannerPlacement placement="homepage_hero" />
 
             {/* SECTION 3: WEB SERIES (BANGLA, HINDI, ENGLISH) */}
             <div className="space-y-2">

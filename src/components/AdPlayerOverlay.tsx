@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Volume2, VolumeX, Crown, SkipForward, Sparkles, AlertCircle } from 'lucide-react';
+import { Volume2, VolumeX, Crown, SkipForward, Sparkles, AlertCircle, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { fetchActiveAdCampaigns } from '../services/adService';
+import { AdminAdvertisement } from '../admin/types/adminTypes';
 
 interface AdPlayerOverlayProps {
   onAdComplete: () => void;
@@ -14,7 +16,25 @@ export const AdPlayerOverlay: React.FC<AdPlayerOverlayProps> = ({ onAdComplete }
   const [secondsRemaining, setSecondsRemaining] = useState(5);
   const [canSkip, setCanSkip] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [activeAd, setActiveAd] = useState<AdminAdvertisement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Load real active campaign for video player
+  useEffect(() => {
+    async function loadCampaign() {
+      try {
+        const ads = await fetchActiveAdCampaigns('video_player');
+        if (ads && ads.length > 0) {
+          // Prefer video type, otherwise take first active
+          const videoAd = ads.find((a) => a.type === 'video' || a.mediaType === 'video') || ads[0];
+          setActiveAd(videoAd);
+        }
+      } catch (err) {
+        console.warn('Ad fetch notice:', err);
+      }
+    }
+    loadCampaign();
+  }, []);
 
   useEffect(() => {
     // 5-second exact countdown for skip ad
@@ -43,31 +63,31 @@ export const AdPlayerOverlay: React.FC<AdPlayerOverlayProps> = ({ onAdComplete }
         }
       });
     }
-  }, []);
+  }, [activeAd]);
 
   const progressPercent = ((5 - secondsRemaining) / 5) * 100;
 
   return (
     <div className="absolute inset-0 z-40 bg-black flex flex-col justify-between p-4 sm:p-6 overflow-hidden select-none animate-in fade-in duration-300">
       {/* Full Commercial Video Background */}
-      <div className="absolute inset-0 z-0 bg-slate-950">
-        <video
-          ref={videoRef}
-          autoPlay
-          loop
-          playsInline
-          muted={isMuted}
-          className="w-full h-full object-cover brightness-90"
-        >
-          <source
-            src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
-            type="video/mp4"
+      <div className="absolute inset-0 z-0 bg-slate-950 flex items-center justify-center">
+        {activeAd && (activeAd.type === 'image' || activeAd.mediaType === 'image') ? (
+          <img
+            src={activeAd.previewUrl}
+            alt={activeAd.title}
+            className="w-full h-full object-cover brightness-90"
           />
-          <source
-            src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-            type="video/mp4"
+        ) : (
+          <video
+            ref={videoRef}
+            autoPlay
+            loop
+            playsInline
+            muted={isMuted}
+            src={activeAd?.previewUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"}
+            className="w-full h-full object-cover brightness-90"
           />
-        </video>
+        )}
         {/* Subtle Dark Vignette for Overlay Legibility */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/80 pointer-events-none" />
       </div>
@@ -114,10 +134,20 @@ export const AdPlayerOverlay: React.FC<AdPlayerOverlayProps> = ({ onAdComplete }
       <div className="relative z-10 max-w-lg bg-black/85 backdrop-blur-xl p-5 sm:p-6 rounded-3xl border border-white/20 shadow-2xl space-y-2.5 mx-auto text-center sm:text-left">
         <div className="flex items-center justify-center sm:justify-start gap-2 text-rose-400 font-cinzel font-bold text-sm sm:text-base">
           <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
-          <span>{language === 'bn' ? 'বিজ্ঞাপনমুক্ত ৪কে আল্ট্রা এইচডি ও ডলবি সাউন্ড' : 'Ad-Free 4K Ultra HD & Dolby Sound'}</span>
+          <span>{activeAd ? activeAd.title : (language === 'bn' ? 'বিজ্ঞাপনমুক্ত ৪কে আল্ট্রা এইচডি ও ডলবি সাউন্ড' : 'Ad-Free 4K Ultra HD & Dolby Sound')}</span>
         </div>
         <p className="text-xs text-slate-200 leading-relaxed font-light">
-          {language === 'bn'
+          {activeAd && activeAd.targetUrl && activeAd.targetUrl !== '#' ? (
+            <a
+              href={activeAd.targetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-amber-400 hover:underline font-medium"
+            >
+              <span>{language === 'bn' ? 'বিজ্ঞাপনদাতার ওয়েবসাইটে যান' : 'Visit Sponsor Website'}</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          ) : language === 'bn'
             ? 'বিকাশ, নগদ বা রকেটে সেন্ড মানি করে চিত্রকথা ভিআইপি মেম্বারশিপ নিন (মাত্র ৳৯৯ থেকে) এবং সমস্ত বিজ্ঞাপন স্থায়ীভাবে বন্ধ করুন!'
             : 'Upgrade to ChitroKatha VIP starting at ৳99 via bKash, Nagad or Rocket to eliminate all ads forever!'}
         </p>

@@ -25,7 +25,10 @@ export const AdminNavbar: React.FC = () => {
     currentAdmin,
     searchQuery,
     setSearchQuery,
-    navigate
+    navigate,
+    notifications,
+    markNotificationRead,
+    markAllNotificationsRead,
   } = useAdmin();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -33,6 +36,8 @@ export const AdminNavbar: React.FC = () => {
 
   const notifRef = useRef<HTMLDivElement>(null);
   const adminRef = useRef<HTMLDivElement>(null);
+
+  const unreadNotifs = notifications.filter((n) => !n.isRead);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -147,7 +152,9 @@ export const AdminNavbar: React.FC = () => {
             aria-label="Admin Notifications"
           >
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[#090b10] animate-pulse" />
+            {unreadNotifs.length > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[#090b10] animate-pulse" />
+            )}
           </button>
 
           {isNotifOpen && (
@@ -155,49 +162,66 @@ export const AdminNavbar: React.FC = () => {
               <div className="flex items-center justify-between pb-3 border-b border-white/5">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-xs text-white">Admin Alerts</span>
-                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-rose-500/20 text-rose-400 rounded-full border border-rose-500/30">
-                    3 New
-                  </span>
+                  {unreadNotifs.length > 0 ? (
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-rose-500/20 text-rose-400 rounded-full border border-rose-500/30">
+                      {unreadNotifs.length} New
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-zinc-500 font-mono">All read</span>
+                  )}
                 </div>
-                <button
-                  onClick={() => setIsNotifOpen(false)}
-                  className="text-[11px] text-zinc-400 hover:text-white transition-colors"
-                >
-                  Mark all read
-                </button>
+                {unreadNotifs.length > 0 && (
+                  <button
+                    onClick={() => markAllNotificationsRead()}
+                    className="text-[11px] text-zinc-400 hover:text-white transition-colors"
+                  >
+                    Mark all read
+                  </button>
+                )}
               </div>
 
-              <div className="divide-y divide-white/5 my-2">
-                {mockNotificationsDropdown.map((n) => (
-                  <div
-                    key={n.id}
-                    onClick={() => {
-                      setIsNotifOpen(false);
-                      if (n.type === 'payment') navigate('/admin/payments');
-                      else if (n.type === 'user') navigate('/admin/users');
-                    }}
-                    className="py-2.5 px-1 hover:bg-white/[0.03] rounded-xl transition-colors cursor-pointer flex gap-3"
-                  >
-                    <div className="p-2 rounded-xl bg-white/[0.04] text-rose-400 shrink-0 self-start">
-                      {n.type === 'payment' ? (
-                        <CreditCard className="w-4 h-4 text-emerald-400" />
-                      ) : n.type === 'user' ? (
-                        <UserCheck className="w-4 h-4 text-blue-400" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-amber-400" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-white truncate">{n.title}</p>
-                      <p className="text-[11px] text-zinc-400 line-clamp-2 mt-0.5 leading-snug">
-                        {n.description}
-                      </p>
-                      <span className="text-[10px] text-zinc-500 mt-1 block font-mono">
-                        {n.time}
-                      </span>
-                    </div>
+              <div className="divide-y divide-white/5 my-2 max-h-72 overflow-y-auto custom-scrollbar">
+                {notifications.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-zinc-500">
+                    No notifications right now.
                   </div>
-                ))}
+                ) : (
+                  notifications.slice(0, 6).map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => {
+                        setIsNotifOpen(false);
+                        markNotificationRead(n.id);
+                        if (n.type === 'payment') navigate('/admin/payments');
+                        else if (n.type === 'system') navigate('/admin/users');
+                      }}
+                      className={`py-2.5 px-2 rounded-xl transition-colors cursor-pointer flex gap-3 ${
+                        !n.isRead ? 'bg-white/[0.04]' : 'hover:bg-white/[0.02]'
+                      }`}
+                    >
+                      <div className="p-2 rounded-xl bg-white/[0.04] text-rose-400 shrink-0 self-start">
+                        {n.type === 'payment' ? (
+                          <CreditCard className="w-4 h-4 text-emerald-400" />
+                        ) : n.type === 'promotion' ? (
+                          <UserCheck className="w-4 h-4 text-blue-400" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-amber-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-semibold truncate ${!n.isRead ? 'text-white' : 'text-zinc-300'}`}>
+                          {n.title}
+                        </p>
+                        <p className="text-[11px] text-zinc-400 line-clamp-2 mt-0.5 leading-snug">
+                          {n.message}
+                        </p>
+                        <span className="text-[10px] text-zinc-500 mt-1 block font-mono">
+                          {new Date(n.scheduledDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
               <button
@@ -207,7 +231,7 @@ export const AdminNavbar: React.FC = () => {
                 }}
                 className="w-full mt-2 py-2 text-center text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition-all"
               >
-                View all broadcast logs →
+                View all notifications →
               </button>
             </div>
           )}

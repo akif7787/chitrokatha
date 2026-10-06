@@ -19,7 +19,8 @@ import {
   Layers,
   Award,
   DollarSign,
-  MessageSquare
+  MessageSquare,
+  ShieldAlert
 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { AdminRoute } from '../../types/adminTypes';
@@ -116,7 +117,8 @@ export const AdminSidebar: React.FC = () => {
       title: 'SYSTEM',
       items: [
         { label: 'Settings', route: '/admin/settings', icon: <Settings className="w-4 h-4" /> },
-        { label: 'Admin Management', route: '/admin/admins', icon: <ShieldCheck className="w-4 h-4" /> }
+        { label: 'Admin Management', route: '/admin/admins', icon: <ShieldCheck className="w-4 h-4" /> },
+        { label: 'Audit Trail', route: '/admin/audit-logs', icon: <ShieldAlert className="w-4 h-4" /> }
       ]
     }
   ];

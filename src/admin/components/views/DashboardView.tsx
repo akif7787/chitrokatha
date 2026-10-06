@@ -8,23 +8,27 @@ import {
   Eye,
   CheckCircle2,
   XCircle,
+  Clock,
   ExternalLink,
   Flame,
   Star
 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
-import { adminKpis, topCinematicContent } from '../../data/adminMockData';
+import { topCinematicContent } from '../../data/adminMockData';
 import { AdminKpiCard } from '../common/AdminKpiCard';
 import { AdminChart } from '../common/AdminChart';
 import { AdminStatusBadge } from '../common/AdminStatusBadge';
 import { AdminUserAvatar } from '../common/AdminUserAvatar';
-import { AdminPayment } from '../../types/adminTypes';
+import { AdminPayment, AdminKpi } from '../../types/adminTypes';
 
 export const DashboardView: React.FC = () => {
   const {
     currentAdmin,
     payments,
     users,
+    movies,
+    dramas,
+    webSeries,
     navigate,
     setSelectedPayment,
     updatePaymentStatus
@@ -32,6 +36,54 @@ export const DashboardView: React.FC = () => {
 
   const recentPayments = payments.slice(0, 5);
   const recentUsers = users.slice(0, 5);
+
+  // Compute live KPIs
+  const totalUsersCount = users.length;
+  const activeVipCount = users.filter((u) => u.subscription === 'vip' || u.subscription === 'standard').length;
+  const totalApprovedRevenue = payments
+    .filter((p) => p.status === 'approved')
+    .reduce((sum, p) => sum + p.amount, 0);
+  const pendingPaymentsCount = payments.filter((p) => p.status === 'pending').length;
+  const totalCatalogCount = movies.length + dramas.length + webSeries.length;
+
+  const dynamicKpis: AdminKpi[] = [
+    {
+      id: 'users',
+      title: 'Total Users',
+      value: totalUsersCount.toLocaleString(),
+      change: `${users.filter((u) => u.status === 'active').length} active`,
+      isPositive: true,
+      timeframe: 'live database',
+      accent: 'blue',
+    },
+    {
+      id: 'vip',
+      title: 'Active VIP / Paid',
+      value: activeVipCount.toLocaleString(),
+      change: `${totalUsersCount > 0 ? Math.round((activeVipCount / totalUsersCount) * 100) : 0}% of users`,
+      isPositive: true,
+      timeframe: 'subscribed',
+      accent: 'amber',
+    },
+    {
+      id: 'revenue',
+      title: 'Verified Revenue',
+      value: `৳${totalApprovedRevenue.toLocaleString()}`,
+      change: `${payments.filter((p) => p.status === 'approved').length} approved`,
+      isPositive: true,
+      timeframe: 'all-time',
+      accent: 'rose',
+    },
+    {
+      id: 'payments',
+      title: 'Pending Verifications',
+      value: pendingPaymentsCount.toLocaleString(),
+      change: pendingPaymentsCount > 0 ? 'Requires review' : 'All clear',
+      isPositive: pendingPaymentsCount === 0,
+      timeframe: 'manual approval',
+      accent: 'purple',
+    },
+  ];
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -48,9 +100,9 @@ export const DashboardView: React.FC = () => {
         return <Sparkles className="w-5 h-5 text-amber-400" />;
       case 'revenue':
         return <DollarSign className="w-5 h-5 text-rose-400" />;
-      case 'content':
+      case 'payments':
       default:
-        return <Film className="w-5 h-5 text-purple-400" />;
+        return <Clock className="w-5 h-5 text-purple-400" />;
     }
   };
 
@@ -63,7 +115,7 @@ export const DashboardView: React.FC = () => {
             {getGreeting()}, {currentAdmin.name} 👋
           </h2>
           <p className="text-xs sm:text-sm text-zinc-400 mt-1">
-            Here's what's happening with <span className="text-rose-400 font-semibold">ChitroKatha</span> today.
+            Real-time status overview of <span className="text-rose-400 font-semibold">ChitroKatha</span>.
           </p>
         </div>
 
@@ -78,14 +130,14 @@ export const DashboardView: React.FC = () => {
             onClick={() => navigate('/admin/payments')}
             className="px-4 py-2 text-xs font-medium text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/10 border border-white/5 rounded-xl transition-all"
           >
-            Review Payments
+            Review Payments ({pendingPaymentsCount})
           </button>
         </div>
       </div>
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {adminKpis.map((kpi) => (
+        {dynamicKpis.map((kpi) => (
           <AdminKpiCard
             key={kpi.id}
             title={kpi.title}
@@ -133,60 +185,68 @@ export const DashboardView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {recentPayments.map((p) => (
-                <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <AdminUserAvatar name={p.userName} avatarUrl={p.userAvatar} size="sm" />
-                      <div>
-                        <div className="font-semibold text-white">{p.userName}</div>
-                        <div className="text-[10px] text-zinc-400">{p.userEmail}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 font-medium text-zinc-300">{p.planName}</td>
-                  <td className="px-5 py-3.5 font-bold text-emerald-400 font-mono">৳{p.amount}</td>
-                  <td className="px-5 py-3.5 capitalize font-mono text-zinc-300">
-                    <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10">
-                      {p.method}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 font-mono text-zinc-400 text-[11px]">{p.trxId}</td>
-                  <td className="px-5 py-3.5 text-zinc-400">{p.date}</td>
-                  <td className="px-5 py-3.5">
-                    <AdminStatusBadge status={p.status} type="payment" />
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        onClick={() => setSelectedPayment(p)}
-                        title="View details"
-                        className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      {p.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => updatePaymentStatus(p.id, 'approved')}
-                            title="Quick Approve"
-                            className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => updatePaymentStatus(p.id, 'rejected')}
-                            title="Quick Reject"
-                            className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors"
-                          >
-                            <XCircle className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
+              {recentPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-5 py-8 text-center text-zinc-500">
+                    No payment requests submitted yet.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                recentPayments.map((p) => (
+                  <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <AdminUserAvatar name={p.userName} avatarUrl={p.userAvatar} size="sm" />
+                        <div>
+                          <div className="font-semibold text-white">{p.userName}</div>
+                          <div className="text-[10px] text-zinc-400">{p.userEmail}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 font-medium text-zinc-300">{p.planName}</td>
+                    <td className="px-5 py-3.5 font-bold text-emerald-400 font-mono">৳{p.amount}</td>
+                    <td className="px-5 py-3.5 capitalize font-mono text-zinc-300">
+                      <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10">
+                        {p.method}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-zinc-400 text-[11px]">{p.trxId}</td>
+                    <td className="px-5 py-3.5 text-zinc-400">{p.date}</td>
+                    <td className="px-5 py-3.5">
+                      <AdminStatusBadge status={p.status} type="payment" />
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setSelectedPayment(p)}
+                          title="View details"
+                          className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {p.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => updatePaymentStatus(p.id, 'approved')}
+                              title="Quick Approve"
+                              className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => updatePaymentStatus(p.id, 'rejected')}
+                              title="Quick Reject"
+                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -210,22 +270,28 @@ export const DashboardView: React.FC = () => {
           </div>
 
           <div className="divide-y divide-white/5">
-            {recentUsers.map((u) => (
-              <div key={u.id} className="py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <AdminUserAvatar name={u.name} avatarUrl={u.avatar} size="sm" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-white truncate">{u.name}</p>
-                    <p className="text-[11px] text-zinc-400 truncate">{u.email}</p>
+            {recentUsers.length === 0 ? (
+              <div className="py-6 text-center text-zinc-500 text-xs">
+                No customer user accounts registered yet.
+              </div>
+            ) : (
+              recentUsers.map((u) => (
+                <div key={u.id} className="py-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <AdminUserAvatar name={u.name} avatarUrl={u.avatar} size="sm" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-white truncate">{u.name}</p>
+                      <p className="text-[11px] text-zinc-400 truncate">{u.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <AdminStatusBadge status={u.subscription} type="tier" />
+                    <AdminStatusBadge status={u.status} type="user" />
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <AdminStatusBadge status={u.subscription} type="tier" />
-                  <AdminStatusBadge status={u.status} type="user" />
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 

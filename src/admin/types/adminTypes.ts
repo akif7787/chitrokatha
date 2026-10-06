@@ -14,7 +14,8 @@ export type AdminRoute =
   | '/admin/analytics'
   | '/admin/settings'
   | '/admin/support'
-  | '/admin/admins';
+  | '/admin/admins'
+  | '/admin/audit-logs';
 
 export type AdminRole = 'super_admin' | 'admin' | 'content_manager' | 'support_manager';
 
@@ -71,9 +72,13 @@ export interface AdminCustomerUser {
   joinedDate: string;
   subscription: string;
   tier: SubscriptionTierType;
+  role?: 'user' | 'admin' | 'super_admin';
   status: UserStatus;
   lastLogin: string;
   watchHistoryCount: number;
+  subscriptionStartDate?: string;
+  subscriptionEndDate?: string;
+  emailVerified?: boolean;
 }
 
 export interface AdminSubscriptionPlan {
@@ -90,8 +95,8 @@ export interface AdminSubscriptionPlan {
   adFree: boolean;
 }
 
-export type AdType = 'video' | 'image' | 'banner' | 'popup';
-export type AdStatus = 'active' | 'scheduled' | 'expired';
+export type AdType = 'video' | 'image' | 'banner' | 'popup' | 'pdf';
+export type AdStatus = 'active' | 'scheduled' | 'expired' | 'paused';
 
 export interface AdminAdvertisement {
   id: string;
@@ -104,9 +109,13 @@ export interface AdminAdvertisement {
   status: AdStatus;
   impressions: number;
   clicks: number;
+  mediaType?: 'image' | 'video' | 'pdf';
+  storagePath?: string;
+  placement?: string;
+  createdAt?: string;
 }
 
-export type NotificationType = 'system' | 'promotion' | 'update' | 'alert';
+export type NotificationType = 'system' | 'promotion' | 'update' | 'alert' | 'support' | 'payment';
 export type NotificationTarget = 'all' | 'vip' | 'free';
 export type NotificationStatus = 'sent' | 'scheduled' | 'draft';
 
@@ -119,6 +128,9 @@ export interface AdminNotificationItem {
   scheduledDate: string;
   status: NotificationStatus;
   sentCount: number;
+  entityType?: string;
+  entityId?: string;
+  isRead?: boolean;
 }
 
 export interface AdminCoupon {
@@ -180,3 +192,15 @@ export interface AdminRevenueDataPoint {
   users: number;
   transactions: number;
 }
+
+export interface AdminAuditLog {
+  id: string;
+  adminUserId?: string;
+  adminName?: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  metadata: Record<string, any>;
+  createdAt: string;
+}
+

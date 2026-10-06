@@ -19,7 +19,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { SubscriptionTier } from '../types/user';
-import { validateCouponCode } from '../services/couponService';
+import { validateCouponCodeAsync, incrementCouponUsage } from '../services/couponService';
 import { sendSubscriptionConfirmationEmail } from '../services/subscriptionEmailService';
 
 interface AppliedCoupon {
@@ -103,9 +103,9 @@ export const SubscriptionModal: React.FC = () => {
   };
 
   // Apply coupon code (Available on payment step)
-  const handleApplyCoupon = (codeToApply?: string) => {
+  const handleApplyCoupon = async (codeToApply?: string) => {
     const raw = (codeToApply || couponInput).trim().toUpperCase();
-    const result = validateCouponCode(raw, language);
+    const result = await validateCouponCodeAsync(raw, language);
 
     if (result.valid && result.code && result.type && result.value !== undefined) {
       setAppliedCoupon({
@@ -160,6 +160,10 @@ export const SubscriptionModal: React.FC = () => {
       ? `PROMO-${appliedCoupon?.code || '100FREE'}-${Date.now().toString().slice(-4)}`
       : trxId.trim();
     const effectivePhone = senderPhone.trim() || user?.phone || 'PROMO-USER';
+
+    if (appliedCoupon?.code) {
+      incrementCouponUsage(appliedCoupon.code).catch(() => {});
+    }
 
     submitSubscriptionPayment(selectedTier, getFinalAmount(), effectiveTrxId, effectivePhone, selectedMethod);
     setPaymentStep('pending_confirmation');

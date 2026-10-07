@@ -416,9 +416,41 @@ export const SupportView: React.FC = () => {
                 <span className="font-mono text-zinc-300 block">{selectedTicket.userPhone || 'N/A'}</span>
               </div>
               <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5">
-                <span className="text-[10px] text-zinc-500 block">Submitted</span>
-                <span className="text-zinc-300 block">
-                  {new Date(selectedTicket.createdAt).toLocaleDateString('bn-BD')}
+                <span className="text-[10px] text-zinc-500 block">Created Time</span>
+                <span className="text-zinc-300 block font-mono text-[11px]">
+                  {new Date(selectedTicket.createdAt).toLocaleString('bn-BD', { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+              </div>
+            </div>
+
+            {/* Lifecycle Timestamps Card */}
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                <span className="text-[10px] text-amber-400 font-bold block">1. Submitted At</span>
+                <span className="text-zinc-200 font-mono text-[11px]">
+                  {new Date(selectedTicket.createdAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className={`p-2 rounded-xl border ${selectedTicket.inProgressAt || selectedTicket.status !== 'new' ? 'bg-blue-500/10 border-blue-500/20' : 'bg-white/[0.02] border-white/5 text-zinc-500'}`}>
+                <span className={`text-[10px] font-bold block ${selectedTicket.inProgressAt || selectedTicket.status !== 'new' ? 'text-blue-400' : 'text-zinc-500'}`}>
+                  2. In Progress At
+                </span>
+                <span className="font-mono text-[11px] text-zinc-300">
+                  {selectedTicket.inProgressAt
+                    ? new Date(selectedTicket.inProgressAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })
+                    : selectedTicket.status !== 'new' && selectedTicket.updatedAt
+                    ? new Date(selectedTicket.updatedAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })
+                    : '—'}
+                </span>
+              </div>
+              <div className={`p-2 rounded-xl border ${selectedTicket.resolvedAt ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-white/[0.02] border-white/5 text-zinc-500'}`}>
+                <span className={`text-[10px] font-bold block ${selectedTicket.resolvedAt ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                  3. Resolved At
+                </span>
+                <span className="font-mono text-[11px] text-zinc-300">
+                  {selectedTicket.resolvedAt
+                    ? new Date(selectedTicket.resolvedAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })
+                    : '—'}
                 </span>
               </div>
             </div>

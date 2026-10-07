@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Megaphone, Plus, Trash2, ExternalLink, Calendar, MapPin, Film, FileText, Image as ImageIcon } from 'lucide-react';
+import { Megaphone, Plus, Trash2, Edit3, ExternalLink, Calendar, MapPin, Film, FileText, Image as ImageIcon } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { AdminStatusBadge } from '../common/AdminStatusBadge';
 import { AdminEmptyState } from '../common/AdminEmptyState';
 import { AddAdModal } from '../modals/AddAdModal';
-import { AdStatus } from '../../types/adminTypes';
+import { EditAdModal } from '../modals/EditAdModal';
+import { AdminAdvertisement, AdStatus } from '../../types/adminTypes';
 
 export const AdsView: React.FC = () => {
   const { advertisements, toggleAdStatus, deleteAd } = useAdmin();
   const [activeTab, setActiveTab] = useState<AdStatus | 'all'>('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingAd, setEditingAd] = useState<AdminAdvertisement | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const filtered = advertisements.filter((ad) => activeTab === 'all' || ad.status === activeTab);
@@ -180,6 +182,14 @@ export const AdsView: React.FC = () => {
 
                 <div className="flex items-center gap-1">
                   <button
+                    onClick={() => setEditingAd(ad)}
+                    className="p-1.5 text-zinc-400 hover:text-white transition-colors"
+                    title="Edit Campaign"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+
+                  <button
                     disabled={deletingId === ad.id}
                     onClick={() => handleDelete(ad.id, ad.title, ad.storagePath)}
                     className="p-1.5 text-zinc-400 hover:text-rose-400 disabled:opacity-50 transition-colors"
@@ -195,6 +205,7 @@ export const AdsView: React.FC = () => {
       )}
 
       <AddAdModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
+      <EditAdModal isOpen={Boolean(editingAd)} onClose={() => setEditingAd(null)} ad={editingAd} />
     </div>
   );
 };

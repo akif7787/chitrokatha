@@ -5,8 +5,21 @@ import { AdminStatusBadge } from '../common/AdminStatusBadge';
 import { AddCouponModal } from '../modals/AddCouponModal';
 
 export const CouponsView: React.FC = () => {
-  const { coupons } = useAdmin();
+  const { coupons, deleteCoupon } = useAdmin();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (couponId: string, code: string) => {
+    if (!window.confirm(`Are you sure you want to delete coupon "${code}"?`)) {
+      return;
+    }
+    setDeletingId(couponId);
+    try {
+      await deleteCoupon(couponId);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -82,8 +95,10 @@ export const CouponsView: React.FC = () => {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => alert(`Delete coupon ${coupon.code}`)}
-                        className="p-1.5 text-zinc-400 hover:text-rose-400"
+                        onClick={() => handleDelete(coupon.id, coupon.code)}
+                        disabled={deletingId === coupon.id}
+                        className="p-1.5 text-zinc-400 hover:text-rose-400 disabled:opacity-50"
+                        title="Delete Coupon"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

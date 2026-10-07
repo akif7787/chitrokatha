@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { AdminModal } from '../common/AdminModal';
 import { AdminSubscriptionPlan } from '../../types/adminTypes';
-import { Plus } from 'lucide-react';
+import { Plus, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 interface AddPlanModalProps {
   isOpen: boolean;
@@ -20,18 +20,40 @@ export const AddPlanModal: React.FC<AddPlanModalProps> = ({ isOpen, onClose }) =
   const [badge, setBadge] = useState('New Plan');
   const [resolution, setResolution] = useState('4K UHD');
   const [adFree, setAdFree] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setErrorMsg('Plan name is required.');
+      return;
+    }
+
+    const parsedPrice = parseFloat(price);
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+      setErrorMsg('Please enter a valid price.');
+      return;
+    }
+
+    const parsedDays = parseInt(durationDays, 10);
+    if (isNaN(parsedDays) || parsedDays <= 0) {
+      setErrorMsg('Duration must be at least 1 day.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
 
     const newPlan: AdminSubscriptionPlan = {
       id: `plan-${Date.now()}`,
       name: name.trim(),
-      price: parseFloat(price) || 99,
-      durationDays: parseInt(durationDays) || 30,
-      durationLabel,
-      features: features.split(',').map((f) => f.trim()),
+      price: parsedPrice,
+      durationDays: parsedDays,
+      durationLabel: durationLabel.trim() || `${parsedDays} Days`,
+      features: features.split(',').map((f) => f.trim()).filter(Boolean),
       isActive: true,
       badge: badge.trim() || undefined,
       subscribersCount: 0,
@@ -39,8 +61,23 @@ export const AddPlanModal: React.FC<AddPlanModalProps> = ({ isOpen, onClose }) =
       adFree
     };
 
-    addPlan(newPlan);
-    onClose();
+    try {
+      const res = await addPlan(newPlan);
+      if (res && !res.success) {
+        setErrorMsg(res.error || 'Failed to create subscription plan.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      setSuccessMsg('Subscription plan created successfully!');
+      setTimeout(() => {
+        setIsSubmitting(false);
+        onClose();
+      }, 600);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to create plan.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -52,6 +89,20 @@ export const AddPlanModal: React.FC<AddPlanModalProps> = ({ isOpen, onClose }) =
       maxWidth="md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {errorMsg && (
+          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-400">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
         <div>
           <label className="block text-xs font-medium text-zinc-400 mb-1">Plan Name *</label>
           <input
@@ -135,10 +186,15 @@ export const AddPlanModal: React.FC<AddPlanModalProps> = ({ isOpen, onClose }) =
           </button>
           <button
             type="submit"
-            className="flex items-center gap-1.5 px-5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-xl transition-all shadow-lg shadow-rose-600/20"
+            disabled={isSubmitting}
+            className="flex items-center gap-1.5 px-5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-lg shadow-rose-600/20"
           >
-            <Plus className="w-4 h-4" />
-            <span>Create Plan</span>
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+            <span>{isSubmitting ? 'Creating...' : 'Create Plan'}</span>
           </button>
         </div>
       </form>

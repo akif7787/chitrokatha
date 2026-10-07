@@ -31,9 +31,13 @@ export async function fetchSubscriptionPlans(): Promise<AdminSubscriptionPlan[]>
       .select('*')
       .order('price', { ascending: true });
 
-    if (plansErr || !plansData || plansData.length === 0) {
-      console.warn('[SubscriptionPlanService] Error or empty plans in DB, fallback:', plansErr?.message);
-      return initialSubscriptionPlans;
+    if (plansErr || !plansData) {
+      console.warn('[SubscriptionPlanService] Error fetching plans from DB:', plansErr?.message);
+      return [];
+    }
+
+    if (plansData.length === 0) {
+      return [];
     }
 
     // 2. Fetch active subscriptions to compute real subscriber counts dynamically
@@ -77,7 +81,7 @@ export async function fetchSubscriptionPlans(): Promise<AdminSubscriptionPlan[]>
     });
   } catch (err: any) {
     console.error('[SubscriptionPlanService] Error fetching plans:', err?.message);
-    return initialSubscriptionPlans;
+    return [];
   }
 }
 

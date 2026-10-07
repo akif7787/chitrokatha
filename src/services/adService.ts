@@ -198,15 +198,20 @@ export async function createAdCampaign(params: {
 
         // Log audit
         if (params.adminUserId) {
-          await (supabase.from('admin_activity_logs') as any)
-            .insert({
+          try {
+            const { error: logErr } = await (supabase.from('admin_activity_logs') as any).insert({
               admin_user_id: params.adminUserId,
               action: 'create_ad_campaign',
               entity_type: 'ad_campaign',
               entity_id: data.id,
               metadata: { name: params.campaignName, placement: params.placement },
-            })
-            .catch(() => {});
+            });
+            if (logErr) {
+              console.warn('[AdService] Activity log notice:', logErr.message);
+            }
+          } catch (lErr: any) {
+            console.warn('[AdService] Activity log notice:', lErr?.message);
+          }
         }
       } else if (error) {
         return { success: false, error: error.message };
@@ -219,6 +224,101 @@ export async function createAdCampaign(params: {
   const localList = getLocalAdCampaigns();
   saveLocalAdCampaigns([newAd, ...localList]);
   return { success: true, data: newAd };
+}
+
+/**
+ * Update an existing advertisement campaign
+ */
+export async function updateAdCampaign(params: {
+  campaignId: string;
+  campaignName: string;
+  mediaType: 'image' | 'video' | 'pdf';
+  mediaUrl: string;
+  storagePath?: string;
+  targetUrl?: string;
+  startDate: string;
+  endDate: string;
+  placement: string;
+  status: AdStatus;
+  adminUserId?: string;
+  oldStoragePath?: string;
+}): Promise<{ success: boolean; data?: AdminAdvertisement; error?: string }> {
+  const updatedAd: AdminAdvertisement = {
+    id: params.campaignId,
+    title: params.campaignName.trim(),
+    type: params.mediaType as AdType,
+    previewUrl: params.mediaUrl,
+    targetUrl: params.targetUrl || '#',
+    startDate: params.startDate,
+    endDate: params.endDate,
+    status: params.status,
+    impressions: 0,
+    clicks: 0,
+    mediaType: params.mediaType,
+    storagePath: params.storagePath,
+    placement: params.placement,
+  };
+
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await (supabase.from('advertisement_campaigns') as any)
+        .update({
+          campaign_name: params.campaignName.trim(),
+          media_type: params.mediaType,
+          media_url: params.mediaUrl,
+          storage_path: params.storagePath || null,
+          target_url: params.targetUrl || null,
+          start_date: params.startDate,
+          end_date: params.endDate,
+          status: params.status,
+          placement: params.placement,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', params.campaignId)
+        .select()
+        .single();
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      if (data) {
+        updatedAd.id = data.id;
+        updatedAd.createdAt = data.created_at;
+      }
+
+      // Cleanup old media file if a new file was uploaded and old file path changed
+      if (params.oldStoragePath && params.storagePath && params.oldStoragePath !== params.storagePath) {
+        supabase.storage.from('advertisements').remove([params.oldStoragePath]).catch(() => {});
+      }
+
+      // Audit log
+      if (params.adminUserId) {
+        try {
+          const { error: logErr } = await (supabase.from('admin_activity_logs') as any).insert({
+            admin_user_id: params.adminUserId,
+            action: 'update_ad_campaign',
+            entity_type: 'ad_campaign',
+            entity_id: params.campaignId,
+            metadata: { name: params.campaignName, placement: params.placement, status: params.status },
+          });
+          if (logErr) {
+            console.warn('[AdService] Activity log notice:', logErr.message);
+          }
+        } catch (lErr: any) {
+          console.warn('[AdService] Activity log notice:', lErr?.message);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[AdService] DB Update notice:', err?.message);
+      return { success: false, error: err?.message };
+    }
+  }
+
+  const localList = getLocalAdCampaigns();
+  const updatedList = localList.map((a) => (a.id === params.campaignId ? updatedAd : a));
+  saveLocalAdCampaigns(updatedList);
+  return { success: true, data: updatedAd };
 }
 
 /**
@@ -242,15 +342,20 @@ export async function toggleAdCampaignStatus(
       }
 
       if (adminUserId) {
-        await (supabase.from('admin_activity_logs') as any)
-          .insert({
+        try {
+          const { error: logErr } = await (supabase.from('admin_activity_logs') as any).insert({
             admin_user_id: adminUserId,
             action: 'toggle_ad_status',
             entity_type: 'ad_campaign',
             entity_id: campaignId,
             metadata: { newStatus: nextStatus },
-          })
-          .catch(() => {});
+          });
+          if (logErr) {
+            console.warn('[AdService] Activity log notice:', logErr.message);
+          }
+        } catch (lErr: any) {
+          console.warn('[AdService] Activity log notice:', lErr?.message);
+        }
       }
     } catch (err: any) {
       console.warn('[AdService] Status toggle notice:', err?.message);
@@ -290,14 +395,19 @@ export async function deleteAdCampaign(
       }
 
       if (adminUserId) {
-        await (supabase.from('admin_activity_logs') as any)
-          .insert({
+        try {
+          const { error: logErr } = await (supabase.from('admin_activity_logs') as any).insert({
             admin_user_id: adminUserId,
             action: 'delete_ad_campaign',
             entity_type: 'ad_campaign',
             entity_id: campaignId,
-          })
-          .catch(() => {});
+          });
+          if (logErr) {
+            console.warn('[AdService] Activity log notice:', logErr.message);
+          }
+        } catch (lErr: any) {
+          console.warn('[AdService] Activity log notice:', lErr?.message);
+        }
       }
     } catch (err: any) {
       console.warn('[AdService] Delete notice:', err?.message);
@@ -307,6 +417,36 @@ export async function deleteAdCampaign(
   const localList = getLocalAdCampaigns();
   saveLocalAdCampaigns(localList.filter((a) => a.id !== campaignId));
   return { success: true };
+}
+
+/**
+ * Check whether a campaign placement matches the requested public placement and device viewport.
+ */
+export function isPlacementMatch(campaignPlacement: string | undefined, requestedPlacement?: string): boolean {
+  if (!campaignPlacement || campaignPlacement === 'all') return true;
+
+  // Device targeting rules
+  if (typeof window !== 'undefined') {
+    const isMobileViewport = window.innerWidth < 768;
+    if (campaignPlacement === 'mobile') return isMobileViewport;
+    if (campaignPlacement === 'desktop') return !isMobileViewport;
+  }
+
+  if (!requestedPlacement || requestedPlacement === 'all') return true;
+
+  // Normalized matching with common aliases
+  const normalize = (p: string) => {
+    if (p === 'homepage_hero' || p === 'homepage_banner') return 'homepage';
+    if (p === 'movies' || p === 'movie') return 'movie_page';
+    if (p === 'drama' || p === 'natok') return 'drama_page';
+    if (p === 'series' || p === 'webseries') return 'webseries_page';
+    return p;
+  };
+
+  const normCampaign = normalize(campaignPlacement);
+  const normRequested = normalize(requestedPlacement);
+
+  return normCampaign === normRequested;
 }
 
 /**
@@ -321,7 +461,7 @@ export async function fetchActiveAdCampaigns(placement?: string): Promise<AdminA
 
   if (isSupabaseConfigured()) {
     try {
-      let query = supabase
+      const query = supabase
         .from('advertisement_campaigns')
         .select('*')
         .eq('status', 'active')
@@ -349,7 +489,7 @@ export async function fetchActiveAdCampaigns(placement?: string): Promise<AdminA
         }));
 
         if (placement && placement !== 'all') {
-          list = list.filter((a) => !a.placement || a.placement === placement || a.placement === 'all');
+          list = list.filter((a) => isPlacementMatch(a.placement, placement));
         }
         return list;
       }
@@ -364,7 +504,7 @@ export async function fetchActiveAdCampaigns(placement?: string): Promise<AdminA
     const isActive = a.status === 'active';
     const isStarted = !a.startDate || a.startDate <= todayStr;
     const isNotExpired = !a.endDate || a.endDate >= todayStr;
-    const matchesPlacement = !placement || placement === 'all' || !a.placement || a.placement === placement || a.placement === 'all';
+    const matchesPlacement = !placement || placement === 'all' || isPlacementMatch(a.placement, placement);
     return isActive && isStarted && isNotExpired && matchesPlacement;
   });
 }

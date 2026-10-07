@@ -645,16 +645,30 @@ function ChitroKathaApp() {
                 <p className="text-xs text-slate-500">{t('tryDifferentSearch')}</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 sm:gap-6 mt-6">
-                {filteredCategoryMovies.map((movie) => (
-                  <MovieCard
-                    key={movie.id}
-                    movie={movie}
-                    onSelect={handleOpenDetails}
-                    onPlayTrailer={(m) => handleOpenPlay(m, 'trailer')}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 sm:gap-6 mt-6">
+                  {filteredCategoryMovies.map((movie) => (
+                    <MovieCard
+                      key={movie.id}
+                      movie={movie}
+                      onSelect={handleOpenDetails}
+                      onPlayTrailer={(m) => handleOpenPlay(m, 'trailer')}
+                    />
+                  ))}
+                </div>
+
+                {/* Section Specific Sponsor Banner (Movies / Drama / Web Series) */}
+                <SponsorBannerPlacement
+                  placement={
+                    activeTab === 'movies'
+                      ? 'movie_page'
+                      : activeTab === 'drama'
+                      ? 'drama_page'
+                      : 'webseries_page'
+                  }
+                  className="mt-8"
+                />
+              </>
             )}
           </div>
         )}

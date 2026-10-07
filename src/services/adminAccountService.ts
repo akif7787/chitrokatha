@@ -17,7 +17,7 @@ export async function fetchRealAdminAccounts(): Promise<AdminAccount[]> {
       .in('role', ['admin', 'super_admin'])
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((adm: any) => {
         const isSuper = adm.role === 'super_admin';
         return {
@@ -43,10 +43,14 @@ export async function fetchRealAdminAccounts(): Promise<AdminAccount[]> {
             : ['manage_content', 'manage_users', 'manage_finance'],
         };
       });
+    } else if (error) {
+      console.warn('[AdminAccountService] Error fetching admins:', error.message);
+      return [];
     }
   } catch (err: any) {
     console.warn('[AdminAccountService] Error fetching admins:', err?.message);
+    return [];
   }
 
-  return [currentAdminAccount];
+  return [];
 }

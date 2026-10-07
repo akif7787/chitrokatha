@@ -14,7 +14,6 @@ import {
   Star
 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
-import { topCinematicContent } from '../../data/adminMockData';
 import { AdminKpiCard } from '../common/AdminKpiCard';
 import { AdminChart } from '../common/AdminChart';
 import { AdminStatusBadge } from '../common/AdminStatusBadge';
@@ -37,6 +36,12 @@ export const DashboardView: React.FC = () => {
   const recentPayments = payments.slice(0, 5);
   const recentUsers = users.slice(0, 5);
 
+  // Compute live catalog items
+  const allCatalog = [...movies, ...dramas, ...webSeries];
+  const topPerformingContent = [...allCatalog]
+    .sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0))
+    .slice(0, 5);
+
   // Compute live KPIs
   const totalUsersCount = users.length;
   const activeVipCount = users.filter((u) => u.subscription === 'vip' || u.subscription === 'standard').length;
@@ -44,7 +49,7 @@ export const DashboardView: React.FC = () => {
     .filter((p) => p.status === 'approved')
     .reduce((sum, p) => sum + p.amount, 0);
   const pendingPaymentsCount = payments.filter((p) => p.status === 'pending').length;
-  const totalCatalogCount = movies.length + dramas.length + webSeries.length;
+  const totalCatalogCount = allCatalog.length;
 
   const dynamicKpis: AdminKpi[] = [
     {
@@ -311,48 +316,54 @@ export const DashboardView: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {topCinematicContent.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-3.5 p-2 rounded-xl hover:bg-white/[0.03] transition-colors"
-              >
-                <div className="relative w-12 h-16 rounded-lg overflow-hidden shrink-0 bg-black/60 border border-white/10">
-                  <img
-                    src={item.poster}
-                    alt={item.titleEn}
-                    className="w-full h-full object-cover"
-                  />
-                  {item.isTop10 && (
-                    <span className="absolute top-0 left-0 bg-rose-600 text-white font-bold text-[9px] px-1 rounded-br">
-                      #{item.isTop10}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white truncate">
-                      {item.titleEn} ({item.titleBn})
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                    {item.industry} • {item.genre}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-400">
-                    <span className="flex items-center gap-1 text-amber-400 font-semibold">
-                      <Star className="w-3 h-3 fill-amber-400" />
-                      {item.rating}
-                    </span>
-                    <span>{item.views} views</span>
-                    <span className="capitalize text-zinc-500 font-mono">
-                      {item.type}
-                    </span>
-                  </div>
-                </div>
-
-                <AdminStatusBadge status={item.status} type="content" />
+            {topPerformingContent.length === 0 ? (
+              <div className="py-8 text-center text-xs text-zinc-500">
+                No catalog items uploaded yet.
               </div>
-            ))}
+            ) : (
+              topPerformingContent.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-3.5 p-2 rounded-xl hover:bg-white/[0.03] transition-colors"
+                >
+                  <div className="relative w-12 h-16 rounded-lg overflow-hidden shrink-0 bg-black/60 border border-white/10">
+                    <img
+                      src={item.poster}
+                      alt={item.titleEn}
+                      className="w-full h-full object-cover"
+                    />
+                    {item.isTop10 && (
+                      <span className="absolute top-0 left-0 bg-rose-600 text-white font-bold text-[9px] px-1 rounded-br">
+                        #{item.isTop10}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white truncate">
+                        {item.titleEn} ({item.titleBn})
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 truncate mt-0.5">
+                      {item.industry} • {item.genre}
+                    </p>
+                    <div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-400">
+                      <span className="flex items-center gap-1 text-amber-400 font-semibold">
+                        <Star className="w-3 h-3 fill-amber-400" />
+                        {item.rating}
+                      </span>
+                      <span>{item.views || (item.viewsCount ? item.viewsCount.toLocaleString() : '0')} views</span>
+                      <span className="capitalize text-zinc-500 font-mono">
+                        {item.type}
+                      </span>
+                    </div>
+                  </div>
+
+                  <AdminStatusBadge status={item.status} type="content" />
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

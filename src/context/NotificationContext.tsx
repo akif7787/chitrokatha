@@ -1,6 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { NotificationItem, ActiveToast, NotificationType } from '../types/notification';
 import { Movie } from '../types/movie';
+import { useAuth } from './AuthContext';
+import {
+  fetchUserNotificationsFromDB,
+  markUserNotificationReadInDB,
+  markAllUserNotificationsReadInDB,
+  clearUserNotificationsInDB,
+} from '../services/adminNotificationService';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 interface NotificationContextType {
   notifications: NotificationItem[];
@@ -11,6 +19,7 @@ interface NotificationContextType {
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   clearNotifications: () => void;
+  refreshUserNotifications: () => Promise<void>;
   notifyNewRelease: (movie: Movie) => void;
   notifyRequestUpdate: (movieTitle: string, status: 'reviewed' | 'uploaded', movieId?: string, poster?: string) => void;
   notifySubscriptionActivated: (planName?: string) => void;
@@ -79,30 +88,57 @@ export const dispatchAppNotification = (
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
-export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error('Failed to load notifications from localStorage', e);
-    }
-    return initialDefaultNotifications;
-  });
+const recentToastKeys = new Set<string>();
 
+export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [activeToasts, setActiveToasts] = useState<ActiveToast[]>([]);
 
-  // Persist notifications on change
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications));
-    } catch (e) {
-      console.error('Failed to save notifications', e);
+  // Function to load notifications for current user from DB
+  const refreshUserNotifications = useCallback(async () => {
+    if (!user?.id) {
+      // Guest user: restore initial/offline defaults
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setNotifications(parsed);
+            return;
+          }
+        }
+      } catch {}
+      setNotifications(initialDefaultNotifications);
+      return;
     }
-  }, [notifications]);
+
+    try {
+      const dbNotifs = await fetchUserNotificationsFromDB(user.id);
+      if (dbNotifs && dbNotifs.length > 0) {
+        const mapped: NotificationItem[] = dbNotifs.map((d: any) => ({
+          id: d.id,
+          type: (d.type as NotificationType) || 'system',
+          titleBn: d.title,
+          titleEn: d.title,
+          messageBn: d.message,
+          messageEn: d.message,
+          timestamp: new Date(d.created_at).getTime(),
+          read: Boolean(d.is_read),
+        }));
+        setNotifications(mapped);
+      } else {
+        setNotifications([]);
+      }
+    } catch (err) {
+      console.warn('[NotificationContext] Error loading user notifications:', err);
+    }
+  }, [user?.id]);
+
+  // Load notifications whenever user login state changes
+  useEffect(() => {
+    refreshUserNotifications();
+  }, [refreshUserNotifications]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -112,6 +148,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const showToast = useCallback(
     (notifData: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>, duration = 6500) => {
+      // Deduplicate rapid identical toasts within 4 seconds window
+      const dedupeKey = `${notifData.titleBn || notifData.titleEn || ''}:${notifData.messageBn || notifData.messageEn || ''}`;
+      if (recentToastKeys.has(dedupeKey)) {
+        return;
+      }
+      recentToastKeys.add(dedupeKey);
+      setTimeout(() => {
+        recentToastKeys.delete(dedupeKey);
+      }, 4000);
+
       const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
       const newNotif: NotificationItem = {
         ...notifData,
@@ -121,7 +167,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       };
 
       // Add to full notification list (MRU)
-      setNotifications((prev) => [newNotif, ...prev.slice(0, 29)]);
+      setNotifications((prev) => [newNotif, ...prev.slice(0, 49)]);
 
       // Add to active toast queue
       const toastItem: ActiveToast = { ...newNotif, duration };
@@ -130,6 +176,46 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     []
   );
 
+  // Direct Supabase Realtime subscription on user_notifications
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !user?.id) return;
+
+    const currentUserId = user.id;
+    const channelName = `notification_ctx_user_${currentUserId}_${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_notifications',
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        (payload: any) => {
+          const isInsert =
+            payload?.eventType?.toUpperCase() === 'INSERT' ||
+            (!payload?.eventType && payload?.new);
+
+          if (isInsert && payload?.new) {
+            showToast({
+              type: (payload.new.type as NotificationType) || 'system',
+              titleBn: payload.new.title,
+              titleEn: payload.new.title,
+              messageBn: payload.new.message,
+              messageEn: payload.new.message,
+            });
+          }
+          refreshUserNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, showToast, refreshUserNotifications]);
+
   // Global event listener for notifications triggered anywhere
   useEffect(() => {
     const handleCustomNotification = (e: any) => {
@@ -137,24 +223,45 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         showToast(e.detail, e.detail.duration || 6500);
       }
     };
-    window.addEventListener('chitrokatha_notification', handleCustomNotification);
-    return () => window.removeEventListener('chitrokatha_notification', handleCustomNotification);
-  }, [showToast]);
+    const handleRefresh = () => {
+      refreshUserNotifications();
+    };
 
-  const markAsRead = useCallback((id: string) => {
+    window.addEventListener('chitrokatha_notification', handleCustomNotification);
+    window.addEventListener('chitrokatha_refresh_user_notifications', handleRefresh);
+
+    return () => {
+      window.removeEventListener('chitrokatha_notification', handleCustomNotification);
+      window.removeEventListener('chitrokatha_refresh_user_notifications', handleRefresh);
+    };
+  }, [showToast, refreshUserNotifications]);
+
+  const markAsRead = useCallback(async (id: string) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
+    await markUserNotificationReadInDB(id);
   }, []);
 
-  const markAllAsRead = useCallback(() => {
+  const markAllAsRead = useCallback(async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }, []);
+    if (user?.id) {
+      await markAllUserNotificationsReadInDB(user.id);
+    }
+  }, [user?.id]);
 
-  const clearNotifications = useCallback(() => {
+  const clearNotifications = useCallback(async () => {
     setNotifications([]);
     setActiveToasts([]);
-  }, []);
+    if (user?.id) {
+      await clearUserNotificationsInDB(user.id);
+    } else {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {}
+    }
+  }, [user?.id]);
+
 
   // Helper: New movie release notification
   const notifyNewRelease = useCallback(
@@ -280,6 +387,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         markAsRead,
         markAllAsRead,
         clearNotifications,
+        refreshUserNotifications,
         notifyNewRelease,
         notifyRequestUpdate,
         notifySubscriptionActivated,

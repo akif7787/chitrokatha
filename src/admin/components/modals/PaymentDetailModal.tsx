@@ -3,33 +3,67 @@ import { useAdmin } from '../../context/AdminContext';
 import { AdminModal } from '../common/AdminModal';
 import { AdminStatusBadge } from '../common/AdminStatusBadge';
 import { AdminUserAvatar } from '../common/AdminUserAvatar';
-import { CheckCircle2, XCircle, Phone, Calendar, CreditCard, Hash, User, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, XCircle, Phone, Calendar, CreditCard, Hash, User, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 
 export const PaymentDetailModal: React.FC = () => {
   const { selectedPayment, setSelectedPayment, updatePaymentStatus } = useAdmin();
   const [noteInput, setNoteInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!selectedPayment) return null;
 
-  const handleApprove = () => {
-    updatePaymentStatus(selectedPayment.id, 'approved', noteInput || 'Payment verified by admin');
-    setSelectedPayment(null);
+  const handleApprove = async () => {
+    setIsProcessing(true);
+    setErrorMsg(null);
+    try {
+      const res = await updatePaymentStatus(selectedPayment.id, 'approved', noteInput || 'Payment verified by admin');
+      if (res && !res.success) {
+        setErrorMsg(res.error || 'Failed to approve payment.');
+        setIsProcessing(false);
+        return;
+      }
+      setIsProcessing(false);
+      setSelectedPayment(null);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Error approving payment');
+      setIsProcessing(false);
+    }
   };
 
-  const handleReject = () => {
-    updatePaymentStatus(selectedPayment.id, 'rejected', noteInput || 'Rejected by admin');
-    setSelectedPayment(null);
+  const handleReject = async () => {
+    setIsProcessing(true);
+    setErrorMsg(null);
+    try {
+      const res = await updatePaymentStatus(selectedPayment.id, 'rejected', noteInput || 'Rejected by admin');
+      if (res && !res.success) {
+        setErrorMsg(res.error || 'Failed to reject payment.');
+        setIsProcessing(false);
+        return;
+      }
+      setIsProcessing(false);
+      setSelectedPayment(null);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Error rejecting payment');
+      setIsProcessing(false);
+    }
   };
 
   return (
     <AdminModal
       isOpen={!!selectedPayment}
-      onClose={() => setSelectedPayment(null)}
+      onClose={() => !isProcessing && setSelectedPayment(null)}
       title="Payment Verification"
       subtitle={`Transaction #${selectedPayment.trxId}`}
       maxWidth="lg"
     >
       <div className="space-y-6">
+        {errorMsg && (
+          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
         {/* User Card */}
         <div className="flex items-center gap-3.5 p-4 rounded-xl bg-white/[0.02] border border-white/5">
           <AdminUserAvatar
@@ -106,25 +140,28 @@ export const PaymentDetailModal: React.FC = () => {
         {/* Action Buttons */}
         <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-white/5">
           <button
-            onClick={() => setSelectedPayment(null)}
-            className="px-4 py-2.5 text-xs font-medium text-zinc-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors"
+            onClick={() => !isProcessing && setSelectedPayment(null)}
+            disabled={isProcessing}
+            className="px-4 py-2.5 text-xs font-medium text-zinc-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
 
           <button
             onClick={handleReject}
-            className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 rounded-xl transition-all"
+            disabled={isProcessing}
+            className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <XCircle className="w-4 h-4" />
+            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
             <span>Reject Payment</span>
           </button>
 
           <button
             onClick={handleApprove}
-            className="flex items-center gap-1.5 px-5 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all shadow-lg shadow-emerald-600/20"
+            disabled={isProcessing}
+            className="flex items-center gap-1.5 px-5 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all shadow-lg shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <CheckCircle2 className="w-4 h-4" />
+            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
             <span>Approve Payment</span>
           </button>
         </div>

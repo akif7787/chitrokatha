@@ -24,6 +24,7 @@ import {
   SupportMessageRecord,
   SupportReplyRecord,
 } from '../services/supportService';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export const SupportModal: React.FC = () => {
   const { isSupportModalOpen, setIsSupportModalOpen, submitSupportTicket, user } = useAuth();
@@ -61,6 +62,47 @@ export const SupportModal: React.FC = () => {
       setIsLoadingTickets(false);
     }
   };
+
+  // Realtime subscription for support_messages and support_replies
+  useEffect(() => {
+    if (!isSupportModalOpen || !user?.id || !isSupabaseConfigured()) return;
+
+    const channel = supabase
+      .channel(`support_user_${user.id}_${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'support_messages',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async () => {
+          const tickets = await fetchUserSupportMessages(user.id);
+          setUserTickets(tickets);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'support_replies',
+        },
+        async (payload: any) => {
+          if (payload?.new?.ticket_id) {
+            const ticketId = payload.new.ticket_id;
+            const updatedReplies = await fetchTicketReplies(ticketId);
+            setRepliesMap((prev) => ({ ...prev, [ticketId]: updatedReplies }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isSupportModalOpen, user?.id]);
 
   const handleToggleExpand = async (ticketId: string) => {
     if (expandedTicketId === ticketId) {
@@ -432,6 +474,102 @@ export const SupportModal: React.FC = () => {
                       {/* Expanded Ticket Details & Reply Thread */}
                       {isExpanded && (
                         <div className="px-4 pb-4 pt-2 border-t border-white/5 space-y-3 bg-black/60">
+                          {/* Visual Lifecycle Timeline: Submitted -> In Progress -> Resolved */}
+                          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-2">
+                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block mb-2">
+                              {language === 'bn' ? 'টিকিট লাইফসাইকেল টাইমলাইন' : 'Ticket Lifecycle Timeline'}
+                            </span>
+                            <div className="flex items-center justify-between relative px-2">
+                              {/* Step 1: Submitted / New */}
+                              <div className="flex flex-col items-center text-center z-10 w-24">
+                                <div className="w-6 h-6 rounded-full bg-amber-500/20 border-2 border-amber-500 text-amber-400 flex items-center justify-center text-[10px] font-bold">
+                                  ✓
+                                </div>
+                                <span className="text-[11px] font-bold text-white mt-1">
+                                  {language === 'bn' ? 'জমাদান' : 'Submitted'}
+                                </span>
+                                <span className="text-[9px] text-zinc-400 font-mono">
+                                  {new Date(ticket.createdAt).toLocaleDateString('bn-BD', { month: 'short', day: 'numeric' })}
+                                </span>
+                              </div>
+
+                              {/* Progress Line 1 */}
+                              <div
+                                className={`flex-1 h-0.5 -mt-6 transition-all ${
+                                  ticket.status === 'in_progress' || ticket.status === 'resolved'
+                                    ? 'bg-gradient-to-r from-amber-500 to-blue-500'
+                                    : 'bg-white/10'
+                                }`}
+                              />
+
+                              {/* Step 2: In Progress */}
+                              <div className="flex flex-col items-center text-center z-10 w-28">
+                                <div
+                                  className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-all ${
+                                    ticket.status === 'in_progress'
+                                      ? 'bg-blue-500/20 border-blue-500 text-blue-400 animate-pulse'
+                                      : ticket.status === 'resolved'
+                                      ? 'bg-blue-500/20 border-blue-500 text-blue-400'
+                                      : 'bg-zinc-800 border-zinc-600 text-zinc-500'
+                                  }`}
+                                >
+                                  {ticket.status === 'resolved' || ticket.status === 'in_progress' ? '✓' : '2'}
+                                </div>
+                                <span
+                                  className={`text-[11px] font-bold mt-1 ${
+                                    ticket.status === 'in_progress'
+                                      ? 'text-blue-400'
+                                      : ticket.status === 'resolved'
+                                      ? 'text-white'
+                                      : 'text-zinc-500'
+                                  }`}
+                                >
+                                  {language === 'bn' ? 'পর্যালোচনাধীন' : 'In Progress'}
+                                </span>
+                                <span className="text-[9px] text-zinc-400 font-mono">
+                                  {ticket.inProgressAt
+                                    ? new Date(ticket.inProgressAt).toLocaleDateString('bn-BD', { month: 'short', day: 'numeric' })
+                                    : ticket.status !== 'new' && ticket.updatedAt
+                                    ? new Date(ticket.updatedAt).toLocaleDateString('bn-BD', { month: 'short', day: 'numeric' })
+                                    : '—'}
+                                </span>
+                              </div>
+
+                              {/* Progress Line 2 */}
+                              <div
+                                className={`flex-1 h-0.5 -mt-6 transition-all ${
+                                  ticket.status === 'resolved'
+                                    ? 'bg-gradient-to-r from-blue-500 to-emerald-500'
+                                    : 'bg-white/10'
+                                }`}
+                              />
+
+                              {/* Step 3: Resolved */}
+                              <div className="flex flex-col items-center text-center z-10 w-24">
+                                <div
+                                  className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-all ${
+                                    ticket.status === 'resolved'
+                                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                                      : 'bg-zinc-800 border-zinc-600 text-zinc-500'
+                                  }`}
+                                >
+                                  {ticket.status === 'resolved' ? '✓' : '3'}
+                                </div>
+                                <span
+                                  className={`text-[11px] font-bold mt-1 ${
+                                    ticket.status === 'resolved' ? 'text-emerald-400' : 'text-zinc-500'
+                                  }`}
+                                >
+                                  {language === 'bn' ? 'সমাধান সম্পন্ন' : 'Resolved'}
+                                </span>
+                                <span className="text-[9px] text-zinc-400 font-mono">
+                                  {ticket.resolvedAt
+                                    ? new Date(ticket.resolvedAt).toLocaleDateString('bn-BD', { month: 'short', day: 'numeric' })
+                                    : '—'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                           {/* Original Message */}
                           <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-xs text-zinc-300">
                             <span className="text-[10px] text-zinc-500 block mb-1">

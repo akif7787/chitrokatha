@@ -14,31 +14,45 @@ export const SponsorBannerPlacement: React.FC<SponsorBannerPlacementProps> = ({
   className = '',
 }) => {
   const { isPremium } = useAuth();
-  const [ad, setAd] = useState<AdminAdvertisement | null>(null);
+  const [activeAds, setActiveAds] = useState<AdminAdvertisement[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
     // If VIP user, never load or show ads
     if (isPremium) {
-      setAd(null);
+      setActiveAds([]);
+      setCurrentIndex(0);
       return;
     }
 
-    async function loadAd() {
+    async function loadAds() {
       try {
         const campaigns = await fetchActiveAdCampaigns(placement);
         if (campaigns && campaigns.length > 0) {
-          setAd(campaigns[0]);
+          setActiveAds(campaigns);
+          setCurrentIndex(0);
         } else {
-          setAd(null);
+          setActiveAds([]);
         }
       } catch (err) {
         console.warn('[SponsorBannerPlacement] Notice:', err);
       }
     }
 
-    loadAd();
+    loadAds();
   }, [placement, isPremium]);
+
+  // If multiple ads are active for this placement, rotate every 15 seconds
+  useEffect(() => {
+    if (activeAds.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % activeAds.length);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [activeAds.length]);
+
+  const ad = activeAds[currentIndex] || null;
 
   if (isPremium || !ad || isDismissed) {
     return null;

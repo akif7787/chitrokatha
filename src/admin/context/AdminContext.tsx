@@ -17,7 +17,6 @@ import {
   AdminAuditLog,
 } from '../types/adminTypes';
 import {
-  currentAdminAccount,
   initialSubscriptionPlans,
   initialMovies,
   initialDramas,
@@ -112,7 +111,7 @@ interface AdminContextType {
   // Management actions
   selectedPayment: AdminPayment | null;
   setSelectedPayment: (payment: AdminPayment | null) => void;
-  updatePaymentStatus: (id: string, status: PaymentStatus, note?: string) => Promise<void>;
+  updatePaymentStatus: (id: string, status: PaymentStatus, note?: string) => Promise<{ success: boolean; error?: string }>;
   updateUserStatus: (id: string, status: UserStatus) => Promise<void>;
   createUserAccount: (params: {
     fullName: string;
@@ -144,8 +143,9 @@ interface AdminContextType {
   ) => Promise<boolean>;
   deleteContentItem: (type: 'movie' | 'drama' | 'series', id: string | number) => void;
   addContentItem: (item: AdminContentItem) => void;
-  addPlan: (plan: AdminSubscriptionPlan) => void;
-  addCoupon: (coupon: AdminCoupon) => void;
+  addPlan: (plan: AdminSubscriptionPlan) => Promise<{ success: boolean; error?: string }>;
+  addCoupon: (coupon: AdminCoupon) => Promise<{ success: boolean; error?: string }>;
+  deleteCoupon: (id: string) => Promise<{ success: boolean; error?: string }>;
   addAdvertisement: (ad: AdminAdvertisement) => void;
   addNotification: (notif: AdminNotificationItem) => void;
   markNotificationRead: (id: string) => Promise<void>;
@@ -171,21 +171,23 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const { user, profile, isSuperAdmin } = useAuth();
+  const { user, profile, isSuperAdmin, isAdmin } = useAuth();
 
   const currentAdmin: AdminAccount = {
-    id: profile?.id || user?.id || currentAdminAccount.id,
-    name: profile?.full_name || user?.name || currentAdminAccount.name,
-    email: user?.email || currentAdminAccount.email,
+    id: profile?.id || user?.id || '',
+    name: profile?.full_name || user?.name || (user?.email ? user.email.split('@')[0] : 'Administrator'),
+    email: user?.email || '',
     role: isSuperAdmin ? 'super_admin' : 'admin',
     roleTitle: isSuperAdmin ? 'Super Admin' : 'Administrator',
     avatar:
       profile?.avatar_url ||
       user?.avatar ||
-      currentAdminAccount.avatar,
-    status: 'active',
+      `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user?.email || 'admin')}`,
+    status: (profile?.status === 'suspended' || user?.status === 'banned' ? 'inactive' : 'active') as 'active' | 'inactive',
     lastLogin: 'Active Now',
-    permissions: ['all_access', 'manage_content', 'manage_users', 'manage_finance', 'manage_system'],
+    permissions: isSuperAdmin
+      ? ['all_access', 'manage_content', 'manage_users', 'manage_finance', 'manage_system']
+      : ['manage_content', 'manage_users', 'manage_finance'],
   };
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -237,14 +239,19 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
             }))
           );
           return;
+        } else if (error) {
+          console.warn('[AdminContext] Error loading payments:', error.message);
+          setPayments([]);
+          return;
         }
       } catch (err: any) {
         console.warn('[AdminContext] Error loading payments:', err?.message);
+        setPayments([]);
+        return;
       }
     }
 
-    const localList = getStoredLocalPayments();
-    setPayments(localList.map(mapPaymentRequestToAdminPayment));
+    setPayments([]);
   }, []);
 
   // 2. Fetch Real Users
@@ -295,9 +302,14 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     setAdmins(a);
   }, []);
 
-  // Initial load
+  // Initial load: Only query database if authenticated admin
   useEffect(() => {
     async function loadAllData() {
+      if (!isAdmin) {
+        setIsLoadingData(false);
+        return;
+      }
+
       setIsLoadingData(true);
       await Promise.all([
         refreshPayments(),
@@ -313,7 +325,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       setIsLoadingData(false);
     }
     loadAllData();
-  }, [refreshPayments, refreshUsers, refreshAds, refreshSupportTickets, refreshNotifications, refreshAuditLogs, refreshPlans, refreshCoupons, refreshAdmins]);
+  }, [isAdmin, refreshPayments, refreshUsers, refreshAds, refreshSupportTickets, refreshNotifications, refreshAuditLogs, refreshPlans, refreshCoupons, refreshAdmins]);
 
   // Realtime Supabase Channels for Admin Data
   useEffect(() => {
@@ -436,11 +448,16 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Payment Status mutator
-  const updatePaymentStatus = async (id: string, status: PaymentStatus, note?: string) => {
+  const updatePaymentStatus = async (id: string, status: PaymentStatus, note?: string): Promise<{ success: boolean; error?: string }> => {
+    let result: { success: boolean; error?: string } = { success: true };
     if (status === 'approved') {
-      await adminApprovePaymentRequest(id, note);
+      result = await adminApprovePaymentRequest(id, note);
     } else if (status === 'rejected') {
-      await adminRejectPaymentRequest(id, note);
+      result = await adminRejectPaymentRequest(id, note);
+    }
+
+    if (!result.success) {
+      return result;
     }
 
     setPayments((prev) =>
@@ -471,6 +488,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       setSelectedPayment((prev) => (prev ? { ...prev, status, notes: note || prev.notes } : null));
     }
     refreshAuditLogs();
+    return { success: true };
   };
 
   // User actions
@@ -586,15 +604,36 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addPlan = async (plan: AdminSubscriptionPlan) => {
-    setPlans((prev) => [plan, ...prev]);
-    await saveSubscriptionPlan(plan);
-    await refreshPlans();
+    const res = await saveSubscriptionPlan(plan);
+    if (res.success) {
+      setPlans((prev) => [plan, ...prev]);
+      await refreshPlans();
+    }
+    return res;
   };
 
   const addCoupon = async (coupon: AdminCoupon) => {
-    setCoupons((prev) => [coupon, ...prev]);
-    await saveCoupon(coupon);
-    await refreshCoupons();
+    const res = await saveCoupon(coupon);
+    if (res.success) {
+      setCoupons((prev) => [coupon, ...prev]);
+      await refreshCoupons();
+    }
+    return res;
+  };
+
+  const deleteCoupon = async (id: string) => {
+    if (isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase.from('coupons').delete().eq('id', id);
+        if (error) {
+          return { success: false, error: error.message };
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+    setCoupons((prev) => prev.filter((c) => c.id !== id));
+    return { success: true };
   };
 
   const addAdvertisement = (ad: AdminAdvertisement) => setAdvertisements((prev) => [ad, ...prev]);
@@ -665,6 +704,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         addContentItem,
         addPlan,
         addCoupon,
+        deleteCoupon,
         addAdvertisement,
         addNotification,
         markNotificationRead,

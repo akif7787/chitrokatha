@@ -25,6 +25,7 @@ export interface SupportMessageRecord {
   adminNotes?: string;
   createdAt: string;
   updatedAt?: string;
+  inProgressAt?: string;
   resolvedAt?: string;
   resolvedBy?: string;
   replies?: SupportReplyRecord[];
@@ -107,16 +108,21 @@ export async function submitSupportMessage(params: {
         newTicket.updatedAt = data.updated_at || data.created_at;
 
         // Create Admin Notification for instant real-time alert in Admin Panel
-        await (supabase.from('admin_notifications') as any)
-          .insert({
+        try {
+          const { error: adminNotifErr } = await (supabase.from('admin_notifications') as any).insert({
             title: `নতুন সহায়তা বার্তা: ${params.subject.slice(0, 30)}`,
             message: `${params.userName} (${params.category.toUpperCase()}) — ${params.message.slice(0, 80)}`,
             type: 'support',
             entity_type: 'support_message',
             entity_id: data.id,
             is_read: false,
-          })
-          .catch((nErr: any) => console.warn('[SupportService] Admin notification notice:', nErr?.message));
+          });
+          if (adminNotifErr) {
+            console.warn('[SupportService] Admin notification notice:', adminNotifErr.message);
+          }
+        } catch (nErr: any) {
+          console.warn('[SupportService] Admin notification notice:', nErr?.message);
+        }
       } else if (error) {
         console.warn('[SupportService] Supabase insert notice:', error.message);
       }
@@ -158,6 +164,7 @@ export async function fetchUserSupportMessages(userId: string): Promise<SupportM
           adminNotes: d.admin_notes,
           createdAt: d.created_at,
           updatedAt: d.updated_at || d.created_at,
+          inProgressAt: d.in_progress_at,
           resolvedAt: d.resolved_at,
           resolvedBy: d.resolved_by,
         }));
@@ -196,6 +203,7 @@ export async function fetchAdminSupportMessages(): Promise<SupportMessageRecord[
           adminNotes: d.admin_notes,
           createdAt: d.created_at,
           updatedAt: d.updated_at || d.created_at,
+          inProgressAt: d.in_progress_at,
           resolvedAt: d.resolved_at,
           resolvedBy: d.resolved_by,
         }));
@@ -284,14 +292,21 @@ export async function submitSupportReply(params: {
 
         // If user replies, alert admin
         if (params.senderRole === 'user') {
-          await (supabase.from('admin_notifications') as any).insert({
-            title: `টিকেট ফলো-আপ: ${params.senderName}`,
-            message: params.message.slice(0, 100),
-            type: 'support',
-            entity_type: 'support_message',
-            entity_id: params.ticketId,
-            is_read: false,
-          }).catch(() => {});
+          try {
+            const { error: notifErr } = await (supabase.from('admin_notifications') as any).insert({
+              title: `টিকেট ফলো-আপ: ${params.senderName}`,
+              message: params.message.slice(0, 100),
+              type: 'support',
+              entity_type: 'support_message',
+              entity_id: params.ticketId,
+              is_read: false,
+            });
+            if (notifErr) {
+              console.warn('[SupportService] Admin notification notice:', notifErr.message);
+            }
+          } catch (e: any) {
+            console.warn('[SupportService] Admin notification notice:', e?.message);
+          }
         }
 
         notifySupportChanged();
@@ -329,12 +344,17 @@ export async function updateSupportTicketStatus(params: {
         updates.admin_notes = params.adminNotes.trim();
       }
 
-      if (params.status === 'resolved') {
+      if (params.status === 'in_progress') {
+        updates.in_progress_at = nowIso;
+        updates.resolved_at = null;
+        updates.resolved_by = null;
+      } else if (params.status === 'resolved') {
         updates.resolved_at = nowIso;
         if (params.adminUserId) {
           updates.resolved_by = params.adminUserId;
         }
-      } else {
+      } else if (params.status === 'new') {
+        updates.in_progress_at = null;
         updates.resolved_at = null;
         updates.resolved_by = null;
       }
@@ -347,8 +367,25 @@ export async function updateSupportTicketStatus(params: {
         return { success: false, error: error.message };
       }
 
-      // If resolved or status changed, notify the user via user_notifications if targetUserId is available
-      if (params.targetUserId) {
+      // If resolved or status changed, notify the user via user_notifications
+      let recipientUserId = params.targetUserId;
+      if (!recipientUserId && isSupabaseConfigured()) {
+        const { data: ticketRow } = await (supabase.from('support_messages') as any)
+          .select('user_id')
+          .eq('id', params.ticketId)
+          .single();
+        if (ticketRow?.user_id) {
+          recipientUserId = ticketRow.user_id;
+        }
+      }
+
+      const isValidUserId =
+        recipientUserId &&
+        recipientUserId !== 'guest_0' &&
+        recipientUserId !== 'guest' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipientUserId);
+
+      if (isValidUserId) {
         const statusLabel =
           params.status === 'resolved'
             ? 'সমাধান হয়েছে (Resolved)'
@@ -356,26 +393,47 @@ export async function updateSupportTicketStatus(params: {
             ? 'প্রক্রিয়াধীন রয়েছে (In Progress)'
             : 'নতুন (New)';
 
-        await (supabase.from('user_notifications') as any).insert({
-          user_id: params.targetUserId,
-          title: `সহায়তা রিকোয়েস্ট আপডেট: ${statusLabel}`,
-          message: params.adminNotes
-            ? `অ্যাডমিন টিম উত্তর দিয়েছেন: "${params.adminNotes.slice(0, 80)}"`
-            : `আপনার সহায়তা রিকোয়েস্ট #${params.ticketId.slice(0, 8)} এর স্ট্যাটাস পরিবর্তিত হয়েছে।`,
-          type: 'support',
-          is_read: false,
-        }).catch((uErr: any) => console.warn('[SupportService] User notification notice:', uErr?.message));
+        const notifTitle =
+          params.status === 'resolved'
+            ? '✅ আপনার সহায়তা রিকোয়েস্ট সমাধান হয়েছে (Resolved)'
+            : params.status === 'in_progress'
+            ? '🔄 আপনার সহায়তা রিকোয়েস্ট পর্যালোচনাধীন (In Progress)'
+            : `সহায়তা রিকোয়েস্ট আপডেট: ${statusLabel}`;
+
+        try {
+          const { error: notifErr } = await (supabase.from('user_notifications') as any).insert({
+            user_id: recipientUserId,
+            title: notifTitle,
+            message: params.adminNotes
+              ? `অ্যাডমিন টিম উত্তর দিয়েছেন: "${params.adminNotes.slice(0, 100)}"`
+              : `আপনার সহায়তা রিকোয়েস্ট #${params.ticketId.slice(0, 8)} এর স্ট্যাটাস "${statusLabel}" এ পরিবর্তিত হয়েছে।`,
+            type: 'support',
+            is_read: false,
+          });
+          if (notifErr) {
+            console.warn('[SupportService] User notification insert notice:', notifErr.message);
+          }
+        } catch (uErr: any) {
+          console.warn('[SupportService] User notification notice:', uErr?.message);
+        }
       }
 
       // Admin audit log
       if (params.adminUserId) {
-        await (supabase.from('admin_activity_logs') as any).insert({
-          admin_user_id: params.adminUserId,
-          action: 'update_support_status',
-          entity_type: 'support_message',
-          entity_id: params.ticketId,
-          metadata: { status: params.status, notes: params.adminNotes },
-        }).catch(() => {});
+        try {
+          const { error: auditErr } = await (supabase.from('admin_activity_logs') as any).insert({
+            admin_user_id: params.adminUserId,
+            action: 'update_support_status',
+            entity_type: 'support_message',
+            entity_id: params.ticketId,
+            metadata: { status: params.status, notes: params.adminNotes },
+          });
+          if (auditErr) {
+            console.warn('[SupportService] Admin audit log notice:', auditErr.message);
+          }
+        } catch (aErr: any) {
+          console.warn('[SupportService] Admin audit log notice:', aErr?.message);
+        }
       }
     } catch (err: any) {
       console.warn('[SupportService] Error updating support ticket in Supabase:', err?.message);
@@ -391,6 +449,7 @@ export async function updateSupportTicketStatus(params: {
         status: params.status,
         adminNotes: params.adminNotes !== undefined ? params.adminNotes : t.adminNotes,
         updatedAt: nowIso,
+        inProgressAt: params.status === 'in_progress' ? (t.inProgressAt || nowIso) : t.inProgressAt,
         resolvedAt: params.status === 'resolved' ? nowIso : undefined,
       };
     }

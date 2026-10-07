@@ -96,7 +96,7 @@ export async function fetchAdminCoupons(): Promise<AdminCoupon[]> {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((c: any) => ({
         id: c.id,
         code: c.code,
@@ -109,12 +109,16 @@ export async function fetchAdminCoupons(): Promise<AdminCoupon[]> {
         endDate: c.end_date,
         status: c.status as 'active' | 'expired' | 'disabled',
       }));
+    } else if (error) {
+      console.warn('[CouponService] Error fetching admin coupons:', error.message);
+      return [];
     }
   } catch (err: any) {
     console.warn('[CouponService] Error fetching admin coupons:', err?.message);
+    return [];
   }
 
-  return initialCoupons;
+  return [];
 }
 
 /**

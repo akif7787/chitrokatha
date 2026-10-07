@@ -20,7 +20,8 @@ import {
   requestLoginChallenge,
   verifyLoginOtp,
   resendLoginOtp,
-  requestLoginOtp
+  requestLoginOtp,
+  signInAdminDirect
 } from '../services/authService';
 import { getProfile, updateProfile } from '../services/profileService';
 import {
@@ -67,6 +68,7 @@ interface AuthContextType {
   // Supabase Auth Methods
   signUpUser: (email: string, password: string, fullName: string, phone?: string) => Promise<{ success: boolean; error?: string; requireOtp?: boolean }>;
   signInUser: (email: string, password: string) => Promise<{ success: boolean; error?: string; requireOtp?: boolean }>;
+  signInAdmin: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signOutUser: () => Promise<void>;
   resetPasswordEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
   changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
@@ -419,6 +421,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const otpVerified = sessionStorage.getItem(`chitrokatha_otp_verified_${session.user.id}`);
           if (otpVerified === 'true') {
             await syncProfile(session.user);
+          } else {
+            // Check if user is an admin; admins do not require normal-user OTP verification
+            const existingProfile = await getProfile(session.user.id);
+            if (
+              existingProfile &&
+              (existingProfile.role === 'admin' || existingProfile.role === 'super_admin') &&
+              existingProfile.status === 'active'
+            ) {
+              sessionStorage.setItem(`chitrokatha_otp_verified_${session.user.id}`, 'true');
+              await syncProfile(session.user);
+            }
           }
         }
       } else if (event === 'SIGNED_OUT') {
@@ -504,11 +517,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (otpVerified === 'true') {
               await syncProfile(session.user);
             } else {
-              // Session expired / unverified after restart: sign out to require fresh login + OTP
-              await signOut();
-              setSupabaseUser(null);
-              setProfile(null);
-              setUser(null);
+              // Check if user is an active admin / super_admin; admin accounts do not require customer email OTP
+              const existingProfile = await getProfile(session.user.id);
+              if (
+                existingProfile &&
+                (existingProfile.role === 'admin' || existingProfile.role === 'super_admin') &&
+                existingProfile.status === 'active'
+              ) {
+                sessionStorage.setItem(`chitrokatha_otp_verified_${session.user.id}`, 'true');
+                await syncProfile(session.user);
+              } else if (existingProfile && existingProfile.role === 'user') {
+                // Only normal customer accounts require fresh login + OTP after restart/session expiration
+                await signOut();
+                setSupabaseUser(null);
+                setProfile(null);
+                setUser(null);
+              } else {
+                // If profile could not be loaded temporarily (e.g. network/loading timing),
+                // do NOT immediately call signOut(). Sync profile to retry gracefully without killing session.
+                await syncProfile(session.user);
+              }
             }
           }
         }
@@ -586,13 +614,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .on(
           'postgres_changes',
           {
-            event: 'INSERT',
+            event: '*',
             schema: 'public',
             table: 'user_notifications',
             filter: `user_id=eq.${currentUserId}`
           },
           (payload: any) => {
-            if (payload?.new) {
+            const isInsert =
+              payload?.eventType?.toUpperCase() === 'INSERT' ||
+              (!payload?.eventType && payload?.new);
+
+            if (isInsert && payload?.new) {
               dispatchAppNotification({
                 type: 'system',
                 titleBn: payload.new.title,
@@ -600,6 +632,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 messageBn: payload.new.message,
                 messageEn: payload.new.message,
               });
+            }
+            // Notify same window or components to reload DB notifications
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('chitrokatha_refresh_user_notifications'));
             }
           }
         )
@@ -715,6 +751,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return { success: true, requireOtp: true };
+  };
+
+  // ----------------------------------------------------------------------------
+  // Admin Sign In (Email + Password ONLY — NO OTP challenge for admin console)
+  // Direct authentication with role verification for admin/super_admin accounts.
+  // ----------------------------------------------------------------------------
+  const signInAdmin = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    setAuthError(null);
+    if (!isSupabaseConfigured()) {
+      login(email);
+      return { success: true };
+    }
+
+    const res = await signInAdminDirect(email, password);
+    if (res.error) {
+      setAuthError(res.error);
+      return { success: false, error: res.error };
+    }
+
+    if (res.data?.user) {
+      sessionStorage.setItem(`chitrokatha_otp_verified_${res.data.user.id}`, 'true');
+      await syncProfile(res.data.user);
+    }
+
+    return { success: true };
   };
 
   // ----------------------------------------------------------------------------
@@ -1152,9 +1213,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isLoggedIn = isSupabaseConfigured()
     ? Boolean(
+        supabaseUser &&
         user &&
         user.status === 'active' &&
-        (supabaseUser?.email_confirmed_at || !supabaseUser) &&
+        supabaseUser.email_confirmed_at &&
         !pendingAuth
       )
     : Boolean(user && !pendingAuth);
@@ -1216,6 +1278,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         cancelPendingAuth,
         signUpUser,
         signInUser,
+        signInAdmin,
         signOutUser,
         resetPasswordEmail,
         changePassword,

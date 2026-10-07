@@ -104,6 +104,72 @@ export async function signIn(
   }
 }
 
+/**
+ * Direct Admin Authentication (Email + Password ONLY — NO OTP challenge).
+ * Authenticates against Supabase Auth and immediately validates role in public.profiles.
+ * If user is not an active admin/super_admin, signs out immediately and rejects.
+ */
+export async function signInAdminDirect(
+  email: string,
+  password: string
+): Promise<AuthResult<{ user: User | null; session: Session | null }>> {
+  if (!isSupabaseConfigured()) {
+    return {
+      data: null,
+      error: 'Supabase configuration is missing. Running in local demo mode.'
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password
+    });
+
+    if (error) {
+      return { data: null, error: formatAuthError(error) };
+    }
+
+    const authUser = data?.user;
+    if (!authUser) {
+      return { data: null, error: 'Authentication failed. No user record returned.' };
+    }
+
+    // Verify role and status in public.profiles
+    const { data: profileData, error: profileErr } = await supabase
+      .from('profiles')
+      .select('role, status')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if (profileErr) {
+      console.warn('[AdminAuth] Profile query warning:', profileErr.message);
+    }
+
+    const role = profileData?.role;
+    const status = profileData?.status;
+
+    if (!role || (role !== 'admin' && role !== 'super_admin') || status !== 'active') {
+      // Immediately revoke session for unauthorized non-admin attempts
+      await supabase.auth.signOut();
+      return {
+        data: null,
+        error: 'অননুমোদিত অ্যাক্সেস। অ্যাডমিন কনসোলে প্রবেশের জন্য অ্যাডমিনিস্ট্রেটর পারমিশন আবশ্যক। (Access Denied: Administrator privileges required.)'
+      };
+    }
+
+    // Mark verified flag in sessionStorage immediately upon confirming admin role
+    // so AuthContext's auth listener and profile sync recognize this admin session without OTP
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(`chitrokatha_otp_verified_${authUser.id}`, 'true');
+    }
+
+    return { data, error: null };
+  } catch (err: any) {
+    return { data: null, error: formatAuthError(err) };
+  }
+}
+
 export async function signOut(): Promise<AuthResult<void>> {
   if (!isSupabaseConfigured()) {
     return { data: null, error: null };

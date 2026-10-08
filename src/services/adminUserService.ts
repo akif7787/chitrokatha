@@ -1,19 +1,33 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { AdminCustomerUser, SubscriptionTierType, UserStatus } from '../admin/types/adminTypes';
 
+export interface FetchAdminUsersResult {
+  users: AdminCustomerUser[];
+  error: string | null;
+}
+
 /**
  * Fetch real user directory from Supabase (profiles joined with user_subscriptions)
  */
-export async function fetchAdminUsers(): Promise<AdminCustomerUser[]> {
+export async function fetchAdminUsers(): Promise<FetchAdminUsersResult> {
   if (!isSupabaseConfigured()) {
-    return [];
+    return { users: [], error: null };
   }
 
   try {
+    // 0. Ensure active session exists before executing admin RPC
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr || !sessionData?.session?.user) {
+      return {
+        users: [],
+        error: 'Administrative session is missing or expired. Please sign in again.'
+      };
+    }
+
     // 1. First attempt secure RPC get_admin_users() which joins auth.users with profiles & subscriptions
     const { data: rpcUsers, error: rpcErr } = await supabase.rpc('get_admin_users');
-    if (!rpcErr && Array.isArray(rpcUsers) && rpcUsers.length > 0) {
-      return rpcUsers.map((u: any) => {
+    if (!rpcErr && Array.isArray(rpcUsers)) {
+      const mapped = rpcUsers.map((u: any) => {
         const tier: SubscriptionTierType =
           u.sub_status === 'active' && u.sub_tier ? (u.sub_tier as SubscriptionTierType) : 'free';
         const subscriptionLabel =
@@ -60,6 +74,11 @@ export async function fetchAdminUsers(): Promise<AdminCustomerUser[]> {
           subscriptionEndDate: u.sub_end_date,
         };
       });
+      return { users: mapped, error: null };
+    }
+
+    if (rpcErr) {
+      console.warn('[AdminUserService] get_admin_users RPC error, attempting fallback:', rpcErr.message);
     }
 
     // 2. Fallback: Direct select on public.profiles
@@ -69,8 +88,11 @@ export async function fetchAdminUsers(): Promise<AdminCustomerUser[]> {
       .order('created_at', { ascending: false });
 
     if (pErr || !profiles) {
-      console.warn('[AdminUserService] Error fetching profiles:', pErr?.message || rpcErr?.message);
-      return [];
+      console.warn('[AdminUserService] Error fetching profiles fallback:', pErr?.message || rpcErr?.message);
+      return {
+        users: [],
+        error: rpcErr?.message || pErr?.message || 'Database query failed or permissions denied.'
+      };
     }
 
     // 3. Fetch active/latest user subscriptions
@@ -85,10 +107,13 @@ export async function fetchAdminUsers(): Promise<AdminCustomerUser[]> {
       }
     }
 
+    const now = new Date();
     // 4. Map to AdminCustomerUser objects
-    return profiles.map((p: any) => {
+    const mappedProfiles = profiles.map((p: any) => {
       const sub = subMap.get(p.id);
-      const tier: SubscriptionTierType = sub?.status === 'active' && sub?.tier ? sub.tier : 'free';
+      const isExpired = sub?.end_date ? new Date(sub.end_date) <= now : false;
+      const isActive = sub?.status === 'active' && !isExpired;
+      const tier: SubscriptionTierType = isActive && sub?.tier ? sub.tier : 'free';
       const subscriptionLabel =
         tier === 'vip'
           ? 'VIP All-Access'
@@ -132,9 +157,14 @@ export async function fetchAdminUsers(): Promise<AdminCustomerUser[]> {
         subscriptionEndDate: sub?.end_date,
       };
     });
+
+    return { users: mappedProfiles, error: null };
   } catch (err: any) {
     console.error('[AdminUserService] Error querying real user directory:', err?.message);
-    return [];
+    return {
+      users: [],
+      error: err?.message || 'Unexpected failure loading users.'
+    };
   }
 }
 
@@ -217,7 +247,42 @@ export async function resetAdminUserPassword(
 }
 
 /**
- * Edit user information from Admin Panel via secure Edge Function
+ * Securely update a user's subscription tier via admin_update_user_subscription RPC
+ */
+export async function adminUpdateUserSubscription(
+  userId: string,
+  plan: 'free' | 'standard' | 'vip',
+  note?: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: true };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('admin_update_user_subscription', {
+      target_user_id: userId,
+      target_plan: plan,
+      admin_note: note || `Subscription changed to ${plan} by admin`,
+    });
+
+    if (error) {
+      console.warn('[AdminUserService] admin_update_user_subscription RPC warning:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    if (data && !data.success) {
+      return { success: false, error: data.error };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    console.error('[AdminUserService] admin_update_user_subscription error:', err?.message);
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Edit user information from Admin Panel via secure Edge Function and RPC
  */
 export async function updateAdminUser(params: {
   userId: string;
@@ -228,6 +293,16 @@ export async function updateAdminUser(params: {
   status?: 'active' | 'suspended' | 'pending';
   plan?: 'free' | 'standard' | 'vip';
 }): Promise<{ success: boolean; error?: string }> {
+  // 1. If subscription plan is being modified, call the dedicated admin RPC
+  if (params.plan !== undefined) {
+    const subRes = await adminUpdateUserSubscription(params.userId, params.plan);
+    if (!subRes.success) {
+      // If RPC fails (e.g. migration pending execution in SQL editor), attempt Edge Function
+      console.warn('[AdminUserService] RPC attempt failed, falling back to Edge Function:', subRes.error);
+    }
+  }
+
+  // 2. Call Edge Function for auth email, profile updates, and fallback subscription update
   const result = await callAdminUsersFunction({
     action: 'update_user',
     ...params,
@@ -235,3 +310,4 @@ export async function updateAdminUser(params: {
 
   return { success: result.success, error: result.error };
 }
+

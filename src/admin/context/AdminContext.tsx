@@ -96,6 +96,8 @@ interface AdminContextType {
   supportTickets: SupportMessageRecord[];
   auditLogs: AdminAuditLog[];
   isLoadingData: boolean;
+  usersError: string | null;
+  paymentsError: string | null;
 
   // Re-fetch triggers
   refreshUsers: () => Promise<void>;
@@ -192,6 +194,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
 
   // Live Database States
   const [payments, setPayments] = useState<AdminPayment[]>([]);
@@ -213,8 +217,15 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   // 1. Fetch Real Payments
   const refreshPayments = useCallback(async () => {
+    setPaymentsError(null);
     if (isSupabaseConfigured()) {
       try {
+        const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+        if (sessionErr || !sessionData?.session?.user) {
+          setPaymentsError('Administrative session is missing or expired. Please sign in again.');
+          return;
+        }
+
         const { data, error } = await supabase
           .from('payment_requests')
           .select('*')
@@ -238,15 +249,16 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
               notes: d.notes,
             }))
           );
+          setPaymentsError(null);
           return;
         } else if (error) {
           console.warn('[AdminContext] Error loading payments:', error.message);
-          setPayments([]);
+          setPaymentsError(error.message || 'Failed to load payments from database.');
           return;
         }
       } catch (err: any) {
         console.warn('[AdminContext] Error loading payments:', err?.message);
-        setPayments([]);
+        setPaymentsError(err?.message || 'Unexpected error loading payment transactions.');
         return;
       }
     }
@@ -256,8 +268,10 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   // 2. Fetch Real Users
   const refreshUsers = useCallback(async () => {
-    const realUsers = await fetchAdminUsers();
+    setUsersError(null);
+    const { users: realUsers, error } = await fetchAdminUsers();
     setUsers(realUsers);
+    setUsersError(error);
   }, []);
 
   // 3. Fetch Real Ads
@@ -680,6 +694,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         supportTickets,
         auditLogs,
         isLoadingData,
+        usersError,
+        paymentsError,
         refreshUsers,
         refreshPayments,
         refreshAds,

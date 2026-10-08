@@ -54,6 +54,8 @@ export const SubscriptionModal: React.FC = () => {
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+  const [isSubmittingTrx, setIsSubmittingTrx] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   const PAYMENT_NUMBER = '01643442518';
 
@@ -142,8 +144,9 @@ export const SubscriptionModal: React.FC = () => {
     setCouponSuccess(null);
   };
 
-  const handleSubmitTrx = (e: React.FormEvent) => {
+  const handleSubmitTrx = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmissionError(null);
 
     const isFreePromo = getFinalAmount() === 0;
 
@@ -161,17 +164,46 @@ export const SubscriptionModal: React.FC = () => {
       : trxId.trim();
     const effectivePhone = senderPhone.trim() || user?.phone || 'PROMO-USER';
 
-    if (appliedCoupon?.code) {
-      incrementCouponUsage(appliedCoupon.code).catch(() => {});
-    }
+    setIsSubmittingTrx(true);
+    try {
+      const res = await submitSubscriptionPayment(
+        selectedTier,
+        getFinalAmount(),
+        effectiveTrxId,
+        effectivePhone,
+        selectedMethod
+      );
 
-    submitSubscriptionPayment(selectedTier, getFinalAmount(), effectiveTrxId, effectivePhone, selectedMethod);
-    setPaymentStep('pending_confirmation');
+      if (res && res.success) {
+        if (appliedCoupon?.code) {
+          incrementCouponUsage(appliedCoupon.code).catch(() => {});
+        }
+        setPaymentStep('pending_confirmation');
+      } else {
+        setSubmissionError(
+          res?.error ||
+          (language === 'bn'
+            ? 'পেমেন্ট রিকোয়েস্ট জমা দেওয়া সম্ভব হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন।'
+            : 'Payment request could not be submitted. Please try again.')
+        );
+      }
+    } catch (err: any) {
+      setSubmissionError(
+        err?.message ||
+        (language === 'bn'
+          ? 'পেমেন্ট রিকোয়েস্ট জমা দেওয়া সম্ভব হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন।'
+          : 'Payment request could not be submitted. Please try again.')
+      );
+    } finally {
+      setIsSubmittingTrx(false);
+    }
   };
 
   const closeModal = () => {
     setIsSubscriptionModalOpen(false);
     setPaymentStep('plans');
+    setSubmissionError(null);
+    setIsSubmittingTrx(false);
   };
 
   return (
@@ -579,13 +611,25 @@ export const SubscriptionModal: React.FC = () => {
                   </p>
                 </div>
 
+                {submissionError && (
+                  <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{submissionError}</span>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={handleSubmitTrx}
-                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-black text-xs sm:text-sm rounded-xl shadow-xl shadow-emerald-950/60 transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+                  disabled={isSubmittingTrx}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-black text-xs sm:text-sm rounded-xl shadow-xl shadow-emerald-950/60 transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  <Crown className="w-4 h-4 fill-black" />
-                  <span>🎉 ফ্রি ভিআইপি মেম্বারশিপের আবেদন জমা দিন</span>
+                  {isSubmittingTrx ? (
+                    <Clock className="w-4 h-4 animate-spin text-black" />
+                  ) : (
+                    <Crown className="w-4 h-4 fill-black" />
+                  )}
+                  <span>{isSubmittingTrx ? 'যাচাই করা হচ্ছে...' : '🎉 ফ্রি ভিআইপি মেম্বারশিপের আবেদন জমা দিন'}</span>
                 </button>
               </div>
             ) : (
@@ -693,22 +737,35 @@ export const SubscriptionModal: React.FC = () => {
                   </div>
                 </div>
 
+                {submissionError && (
+                  <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{submissionError}</span>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex items-center gap-3 pt-2">
                   <button
                     type="button"
                     onClick={() => setPaymentStep('plans')}
-                    className="w-1/3 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                    disabled={isSubmittingTrx}
+                    className="w-1/3 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                   >
                     প্ল্যান পরিবর্তন
                   </button>
 
                   <button
                     type="submit"
-                    className="w-2/3 py-3 bg-gradient-to-r from-amber-500 via-rose-600 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-black text-xs font-black rounded-xl transition-all shadow-xl shadow-amber-950/50 flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                    disabled={isSubmittingTrx}
+                    className="w-2/3 py-3 bg-gradient-to-r from-amber-500 via-rose-600 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-black text-xs font-black rounded-xl transition-all shadow-xl shadow-amber-950/50 flex items-center justify-center gap-2 active:scale-95 cursor-pointer disabled:opacity-50"
                   >
-                    <span>ট্রানজেকশন আইডি জমা দিন (৳{getFinalAmount()})</span>
-                    <ArrowRight className="w-4 h-4" />
+                    {isSubmittingTrx ? (
+                      <Clock className="w-4 h-4 animate-spin text-black" />
+                    ) : (
+                      <ArrowRight className="w-4 h-4" />
+                    )}
+                    <span>{isSubmittingTrx ? 'জমা হচ্ছে...' : `ট্রানজেকশন আইডি জমা দিন (৳${getFinalAmount()})`}</span>
                   </button>
                 </div>
               </form>

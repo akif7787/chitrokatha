@@ -296,16 +296,38 @@ serve(async (req: Request) => {
         if (plan === "free") {
           await supabaseAdmin
             .from("user_subscriptions")
-            .update({ status: "canceled", updated_at: new Date().toISOString() })
+            .update({
+              tier: "free",
+              status: "cancelled",
+              end_date: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
             .eq("user_id", userId);
         } else {
-          const startDate = new Date();
-          const endDate = new Date();
-          if (plan === "vip") {
-            endDate.setFullYear(endDate.getFullYear() + 1);
-          } else {
-            endDate.setDate(endDate.getDate() + 30);
+          // Look up configured duration from subscription_plans
+          let durationDays = plan === "vip" ? 365 : 30;
+          try {
+            const { data: plansData } = await supabaseAdmin
+              .from("subscription_plans")
+              .select("id, duration_days, is_active")
+              .eq("is_active", true);
+
+            if (plansData && plansData.length > 0) {
+              const matched = plansData.find((p: any) =>
+                plan === "vip"
+                  ? (p.id.includes("365") || p.id.includes("vip"))
+                  : (p.id.includes("30") || p.id.includes("standard"))
+              );
+              if (matched && matched.duration_days > 0) {
+                durationDays = matched.duration_days;
+              }
+            }
+          } catch (planQueryErr) {
+            console.warn("Failed to fetch plan duration from subscription_plans:", planQueryErr);
           }
+
+          const startDate = new Date();
+          const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
           await supabaseAdmin
             .from("user_subscriptions")

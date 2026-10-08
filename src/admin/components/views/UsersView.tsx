@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Search, Plus, Filter, Eye, Edit2, Ban, CheckCircle } from 'lucide-react';
+import { Users, Search, Plus, Filter, Eye, Edit2, Ban, CheckCircle, ShieldAlert, RefreshCw, AlertTriangle } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { AdminStatusBadge } from '../common/AdminStatusBadge';
 import { AdminUserAvatar } from '../common/AdminUserAvatar';
@@ -11,7 +11,7 @@ import { AdminCustomerUser } from '../../types/adminTypes';
 import { AdminPagination } from '../common/AdminPagination';
 
 export const UsersView: React.FC = () => {
-  const { users, updateUserStatus, isLoadingData } = useAdmin();
+  const { users, updateUserStatus, isLoadingData, usersError, refreshUsers } = useAdmin();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
@@ -48,7 +48,7 @@ export const UsersView: React.FC = () => {
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
           <div className="text-xs font-mono text-zinc-400">
-            Total Users: <span className="text-white font-bold">{users.length}</span>
+            Total Users: <span className="text-white font-bold">{usersError ? '—' : users.length}</span>
           </div>
 
           <button
@@ -96,6 +96,30 @@ export const UsersView: React.FC = () => {
         <div className="p-12 text-center text-zinc-400 text-xs">
           <span className="w-5 h-5 border-2 border-rose-500 border-t-transparent rounded-full animate-spin inline-block mb-2" />
           <p>Loading user directory from database...</p>
+        </div>
+      ) : usersError ? (
+        <div className="p-8 rounded-2xl bg-rose-950/20 border border-rose-500/30 text-center space-y-4">
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-lg shadow-rose-950/50">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="max-w-md mx-auto space-y-1.5">
+            <h3 className="text-base font-bold text-white font-['Cinzel',serif]">
+              Unable to Load Users (ব্যবহারকারী তালিকা লোড করা সম্ভব হয়নি)
+            </h3>
+            <p className="text-xs text-rose-300 font-medium">
+              {usersError}
+            </p>
+            <p className="text-[11px] text-zinc-400">
+              Your administrative session or database permissions could not be verified. Please check your credentials or try again.
+            </p>
+          </div>
+          <button
+            onClick={() => refreshUsers()}
+            className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-950/40 inline-flex items-center gap-2 cursor-pointer active:scale-95"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry Loading Users</span>
+          </button>
         </div>
       ) : users.length === 0 ? (
         <AdminEmptyState

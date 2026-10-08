@@ -7,18 +7,27 @@ import {
   XCircle,
   Clock,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { AdminStatusBadge } from '../common/AdminStatusBadge';
 import { AdminUserAvatar } from '../common/AdminUserAvatar';
 import { AdminFilterBar } from '../common/AdminFilterBar';
+import { AdminEmptyState } from '../common/AdminEmptyState';
 import { PaymentDetailModal } from '../modals/PaymentDetailModal';
 import { PaymentStatus } from '../../types/adminTypes';
 import { AdminPagination } from '../common/AdminPagination';
 
 export const PaymentsView: React.FC = () => {
-  const { payments, setSelectedPayment, updatePaymentStatus } = useAdmin();
+  const {
+    payments,
+    setSelectedPayment,
+    updatePaymentStatus,
+    isLoadingData,
+    paymentsError,
+    refreshPayments
+  } = useAdmin();
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [methodFilter, setMethodFilter] = useState('all');
@@ -59,10 +68,10 @@ export const PaymentsView: React.FC = () => {
         {/* Status Count Pills */}
         <div className="flex items-center gap-2 text-xs">
           <span className="px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 font-semibold">
-            {pendingCount} Pending
+            {paymentsError ? '—' : `${pendingCount} Pending`}
           </span>
           <span className="px-3 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold">
-            {approvedCount} Approved
+            {paymentsError ? '—' : `${approvedCount} Approved`}
           </span>
         </div>
       </div>
@@ -134,7 +143,7 @@ export const PaymentsView: React.FC = () => {
               : 'text-zinc-400 hover:text-white hover:bg-white/5'
           }`}
         >
-          <span>All Transactions ({payments.length})</span>
+          <span>All Transactions ({paymentsError ? '—' : payments.length})</span>
         </button>
       </div>
 
@@ -159,121 +168,162 @@ export const PaymentsView: React.FC = () => {
         ]}
       />
 
-      {/* Table */}
-      <div className="bg-[#0e1219]/90 border border-white/5 rounded-2xl overflow-hidden backdrop-blur-md">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-black/30 border-b border-white/5 text-zinc-400 font-mono text-[11px] uppercase tracking-wider">
-              <tr>
-                <th className="px-5 py-3.5 font-medium">Transaction ID</th>
-                <th className="px-5 py-3.5 font-medium">Subscriber</th>
-                <th className="px-5 py-3.5 font-medium">Plan</th>
-                <th className="px-5 py-3.5 font-medium">Amount</th>
-                <th className="px-5 py-3.5 font-medium">Method & Sender</th>
-                <th className="px-5 py-3.5 font-medium">Date</th>
-                <th className="px-5 py-3.5 font-medium">Status</th>
-                <th className="px-5 py-3.5 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {paginated.map((payment) => (
-                <tr
-                  key={payment.id}
-                  className={`transition-colors ${
-                    payment.status === 'pending'
-                      ? 'bg-amber-500/[0.05] hover:bg-amber-500/[0.08] ring-1 ring-amber-500/10'
-                      : 'hover:bg-white/[0.02]'
-                  }`}
-                >
-                  <td className="px-5 py-3.5 font-mono font-bold text-rose-400">
-                    <div className="flex items-center gap-1.5">
-                      {payment.status === 'pending' && (
-                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
-                      )}
-                      <span>{payment.trxId}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <AdminUserAvatar
-                        name={payment.userName}
-                        avatarUrl={payment.userAvatar}
-                        size="sm"
-                      />
-                      <div className="min-w-0">
-                        <div className="font-semibold text-white truncate">{payment.userName}</div>
-                        <div className="text-[10px] text-zinc-400 truncate">{payment.userEmail}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-zinc-300 font-medium">
-                    <span className="px-2 py-0.5 rounded-md bg-white/5 font-mono text-[11px] font-semibold text-amber-300">
-                      {payment.planName}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 font-bold font-mono text-emerald-400 text-sm">
-                    ৳{payment.amount}
-                  </td>
-                  <td className="px-5 py-3.5 font-mono text-zinc-300">
-                    <span className="capitalize font-bold text-white">{payment.method}</span>
-                    <span className="block text-[10px] text-zinc-400">{payment.senderPhone}</span>
-                  </td>
-                  <td className="px-5 py-3.5 text-zinc-400">{payment.date}</td>
-                  <td className="px-5 py-3.5">
-                    <AdminStatusBadge status={payment.status} type="payment" />
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        onClick={() => setSelectedPayment(payment)}
-                        className="px-2.5 py-1 text-xs font-semibold text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
-                      >
-                        Inspect
-                      </button>
-                      {payment.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => {
-                              if (window.confirm(`Approve payment ${payment.trxId} (৳${payment.amount}) for ${payment.userName}? This will activate their subscription immediately.`)) {
-                                updatePaymentStatus(payment.id, 'approved');
-                              }
-                            }}
-                            title="Approve and activate subscription"
-                            className="px-2.5 py-1 text-xs font-bold text-black bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all flex items-center gap-1 shadow-md shadow-emerald-950/40 cursor-pointer"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Approve</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (window.confirm(`Reject payment ${payment.trxId} for ${payment.userName}?`)) {
-                                updatePaymentStatus(payment.id, 'rejected');
-                              }
-                            }}
-                            title="Reject payment request"
-                            className="px-2 py-1 text-xs font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Reject</span>
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Table, Loading, Error, or Empty State */}
+      {isLoadingData ? (
+        <div className="p-12 text-center text-zinc-400 text-xs">
+          <span className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin inline-block mb-2" />
+          <p>Loading payment verifications from database...</p>
         </div>
-
-        <AdminPagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={filtered.length}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
+      ) : paymentsError ? (
+        <div className="p-8 rounded-2xl bg-rose-950/20 border border-rose-500/30 text-center space-y-4">
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-lg shadow-rose-950/50">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div className="max-w-md mx-auto space-y-1.5">
+            <h3 className="text-base font-bold text-white font-['Cinzel',serif]">
+              Unable to Load Payments (পেমেন্ট লেনদেন লোড করা সম্ভব হয়নি)
+            </h3>
+            <p className="text-xs text-rose-300 font-medium">
+              {paymentsError}
+            </p>
+            <p className="text-[11px] text-zinc-400">
+              Unable to verify administrative authorization for payment records. Please try again.
+            </p>
+          </div>
+          <button
+            onClick={() => refreshPayments()}
+            className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-950/40 inline-flex items-center gap-2 cursor-pointer active:scale-95"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry Loading Payments</span>
+          </button>
+        </div>
+      ) : filtered.length === 0 ? (
+        <AdminEmptyState
+          icon={<CreditCard className="w-10 h-10 text-zinc-600" />}
+          title={payments.length === 0 ? "No Payment Requests Yet" : "No Matching Transactions"}
+          description={
+            payments.length === 0
+              ? "Subscriber bKash/Nagad/Rocket/Upay payment submissions will appear here for verification."
+              : "No payment records match your active search or filter criteria."
+          }
         />
-      </div>
+      ) : (
+        <div className="bg-[#0e1219]/90 border border-white/5 rounded-2xl overflow-hidden backdrop-blur-md">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-black/30 border-b border-white/5 text-zinc-400 font-mono text-[11px] uppercase tracking-wider">
+                <tr>
+                  <th className="px-5 py-3.5 font-medium">Transaction ID</th>
+                  <th className="px-5 py-3.5 font-medium">Subscriber</th>
+                  <th className="px-5 py-3.5 font-medium">Plan</th>
+                  <th className="px-5 py-3.5 font-medium">Amount</th>
+                  <th className="px-5 py-3.5 font-medium">Method & Sender</th>
+                  <th className="px-5 py-3.5 font-medium">Date</th>
+                  <th className="px-5 py-3.5 font-medium">Status</th>
+                  <th className="px-5 py-3.5 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {paginated.map((payment) => (
+                  <tr
+                    key={payment.id}
+                    className={`transition-colors ${
+                      payment.status === 'pending'
+                        ? 'bg-amber-500/[0.05] hover:bg-amber-500/[0.08] ring-1 ring-amber-500/10'
+                        : 'hover:bg-white/[0.02]'
+                    }`}
+                  >
+                    <td className="px-5 py-3.5 font-mono font-bold text-rose-400">
+                      <div className="flex items-center gap-1.5">
+                        {payment.status === 'pending' && (
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+                        )}
+                        <span>{payment.trxId}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <AdminUserAvatar
+                          name={payment.userName}
+                          avatarUrl={payment.userAvatar}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-semibold text-white truncate">{payment.userName}</div>
+                          <div className="text-[10px] text-zinc-400 truncate">{payment.userEmail}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-zinc-300 font-medium">
+                      <span className="px-2 py-0.5 rounded-md bg-white/5 font-mono text-[11px] font-semibold text-amber-300">
+                        {payment.planName}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 font-bold font-mono text-emerald-400 text-sm">
+                      ৳{payment.amount}
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-zinc-300">
+                      <span className="capitalize font-bold text-white">{payment.method}</span>
+                      <span className="block text-[10px] text-zinc-400">{payment.senderPhone}</span>
+                    </td>
+                    <td className="px-5 py-3.5 text-zinc-400">{payment.date}</td>
+                    <td className="px-5 py-3.5">
+                      <AdminStatusBadge status={payment.status} type="payment" />
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setSelectedPayment(payment)}
+                          className="px-2.5 py-1 text-xs font-semibold text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                        >
+                          Inspect
+                        </button>
+                        {payment.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Approve payment ${payment.trxId} (৳${payment.amount}) for ${payment.userName}? This will activate their subscription immediately.`)) {
+                                  updatePaymentStatus(payment.id, 'approved');
+                                }
+                              }}
+                              title="Approve and activate subscription"
+                              className="px-2.5 py-1 text-xs font-bold text-black bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all flex items-center gap-1 shadow-md shadow-emerald-950/40 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Approve</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Reject payment ${payment.trxId} for ${payment.userName}?`)) {
+                                  updatePaymentStatus(payment.id, 'rejected');
+                                }
+                              }}
+                              title="Reject payment request"
+                              className="px-2 py-1 text-xs font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>Reject</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <AdminPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+      )}
 
       <PaymentDetailModal />
     </div>

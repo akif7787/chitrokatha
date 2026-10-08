@@ -41,7 +41,105 @@ export async function submitPaymentRequest(params: {
 }): Promise<{ success: boolean; data?: PaymentRequest; error?: string }> {
   const cleanTrxId = params.trxId.trim().toUpperCase();
 
-  // Validate duplicate pending submissions with same TrxID
+  // 1. Production Mode with Supabase
+  if (isSupabaseConfigured()) {
+    // A. Verify active Supabase auth session
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    const sessionUser = sessionData?.session?.user;
+
+    if (sessionErr || !sessionUser || !sessionUser.id) {
+      return {
+        success: false,
+        error: 'Please log in and verify your account before submitting a payment request. (পেমেন্ট রিকোয়েস্ট পাঠানোর আগে অনুগ্রহ করে লগইন ও অ্যাকাউন্ট ভেরিফাই করুন।)'
+      };
+    }
+
+    const effectiveUserId = sessionUser.id;
+
+    // B. Check duplicate TrxID in database
+    const { data: existingTrx } = await supabase
+      .from('payment_requests')
+      .select('id, status')
+      .eq('trx_id', cleanTrxId)
+      .maybeSingle();
+
+    if (existingTrx) {
+      return {
+        success: false,
+        error: 'এই ট্রানজেকশন আইডি (TrxID) দিয়ে ইতোমধ্যে একটি পেমেন্ট রিকোয়েস্ট জমা দেওয়া আছে। (A payment request with this TrxID already exists.)'
+      };
+    }
+
+    // C. Strict database insert into public.payment_requests
+    try {
+      const { data, error } = await supabase
+        .from('payment_requests')
+        .insert({
+          user_id: effectiveUserId,
+          user_email: params.userEmail || sessionUser.email || '',
+          user_name: params.userName || sessionUser.user_metadata?.full_name || 'Subscriber',
+          user_phone: params.userPhone || params.senderPhone.trim(),
+          plan: params.plan,
+          amount: params.amount,
+          method: params.method,
+          sender_phone: params.senderPhone.trim(),
+          trx_id: cleanTrxId,
+          status: 'pending'
+        })
+        .select()
+        .single();
+
+      if (error || !data) {
+        console.error('[PaymentService] Database insert into payment_requests failed:', error?.message);
+        // STRICT REQUIREMENT: DO NOT save locally. DO NOT mark pending locally.
+        return {
+          success: false,
+          error: 'Payment request could not be submitted. Please try again. (পেমেন্ট রিকোয়েস্ট জমা দেওয়া সম্ভব হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন।)'
+        };
+      }
+
+      const newRequest: PaymentRequest = {
+        id: data.id,
+        userId: data.user_id,
+        userName: data.user_name,
+        userEmail: data.user_email,
+        userPhone: data.user_phone,
+        plan: data.plan as SubscriptionTier,
+        amount: Number(data.amount),
+        method: data.method,
+        senderPhone: data.sender_phone,
+        trxId: data.trx_id,
+        status: data.status,
+        submittedAt: data.created_at
+      };
+
+      // Dispatch server-side admin alert email
+      sendAdminNewPaymentAlert({
+        userId: newRequest.userId,
+        userName: newRequest.userName,
+        userEmail: newRequest.userEmail,
+        userPhone: newRequest.userPhone,
+        plan: newRequest.plan,
+        amount: newRequest.amount,
+        method: newRequest.method,
+        senderPhone: newRequest.senderPhone,
+        trxId: cleanTrxId,
+        submittedAt: newRequest.submittedAt,
+      }).catch((err) => console.warn('[PaymentService] Admin alert dispatch notice:', err));
+
+      notifyPaymentStatusChanged();
+
+      return { success: true, data: newRequest };
+    } catch (err: any) {
+      console.error('[PaymentService] Unexpected remote save exception:', err?.message);
+      return {
+        success: false,
+        error: 'Payment request could not be submitted. Please try again. (পেমেন্ট রিকোয়েস্ট জমা দেওয়া সম্ভব হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন।)'
+      };
+    }
+  }
+
+  // 2. Offline local preview mode (only if Supabase is completely unconfigured)
   const localList = getStoredLocalPayments();
   const existingPending = localList.find(
     (p) => p.status === 'pending' && (p.trxId === cleanTrxId || (p.userId === params.userId && p.plan === params.plan))
@@ -54,8 +152,8 @@ export async function submitPaymentRequest(params: {
     };
   }
 
-  const newRequest: PaymentRequest = {
-    id: `pay_${Date.now()}`,
+  const demoRequest: PaymentRequest = {
+    id: `pay_demo_${Date.now()}`,
     userId: params.userId,
     userName: params.userName,
     userEmail: params.userEmail,
@@ -69,50 +167,8 @@ export async function submitPaymentRequest(params: {
     submittedAt: new Date().toISOString()
   };
 
-  // 1. If Supabase is connected, attempt remote insert with strict RLS (status must be 'pending')
-  if (isSupabaseConfigured()) {
-    try {
-      const { data, error } = await (supabase.from('payment_requests') as any).insert({
-        user_id: params.userId,
-        user_email: params.userEmail,
-        user_name: params.userName,
-        user_phone: params.userPhone,
-        plan: params.plan,
-        amount: params.amount,
-        method: params.method,
-        sender_phone: params.senderPhone.trim(),
-        trx_id: cleanTrxId,
-        status: 'pending'
-      }).select().single();
-
-      if (!error && data) {
-        newRequest.id = data.id;
-      } else if (error) {
-        console.warn('[PaymentService] Remote save notice, using local sync fallback:', error.message);
-      }
-    } catch (err: any) {
-      console.warn('[PaymentService] Unexpected remote save error:', err?.message);
-    }
-  }
-
-  // 2. Persist locally
-  saveStoredLocalPayments([newRequest, ...localList]);
-
-  // 3. Dispatch server-side admin alert email
-  sendAdminNewPaymentAlert({
-    userId: params.userId,
-    userName: params.userName,
-    userEmail: params.userEmail,
-    userPhone: params.userPhone,
-    plan: params.plan,
-    amount: params.amount,
-    method: params.method,
-    senderPhone: params.senderPhone,
-    trxId: cleanTrxId,
-    submittedAt: newRequest.submittedAt,
-  }).catch((err) => console.warn('[PaymentService] Admin alert dispatch notice:', err));
-
-  return { success: true, data: newRequest };
+  saveStoredLocalPayments([demoRequest, ...localList]);
+  return { success: true, data: demoRequest };
 }
 
 export function mapPaymentRequestToAdminPayment(req: PaymentRequest): AdminPayment {
@@ -152,7 +208,10 @@ export async function fetchUserActiveSubscription(userId: string): Promise<{
       return null;
     }
 
-    if (data && data.status === 'active') {
+    const now = new Date();
+    const isExpired = data?.end_date ? new Date(data.end_date) <= now : false;
+
+    if (data && data.status === 'active' && !isExpired) {
       return {
         hasActiveSubscription: true,
         tier: data.tier as SubscriptionTier,
@@ -163,10 +222,10 @@ export async function fetchUserActiveSubscription(userId: string): Promise<{
     }
     return {
       hasActiveSubscription: false,
-      tier: (data?.tier as SubscriptionTier) || 'free',
+      tier: 'free',
       startDate: data?.start_date,
       endDate: data?.end_date,
-      status: data?.status || 'inactive',
+      status: isExpired && data?.status === 'active' ? 'expired' : (data?.status || 'inactive'),
     };
   } catch (err: any) {
     console.warn('[PaymentService] Fetch active subscription error:', err?.message);
@@ -207,6 +266,7 @@ export async function fetchUserLatestPayment(userId: string): Promise<PaymentReq
     } catch (err: any) {
       console.warn('[PaymentService] Error fetching user latest payment from Supabase:', err?.message);
     }
+    return null;
   }
 
   // 2. Fallback to local store
@@ -242,8 +302,10 @@ export async function fetchUserAllPayments(userId: string): Promise<PaymentReque
           submittedAt: d.created_at,
         }));
       }
+      return [];
     } catch (err: any) {
       console.warn('[PaymentService] Error fetching user all payments:', err?.message);
+      return [];
     }
   }
 

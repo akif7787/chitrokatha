@@ -86,7 +86,7 @@ interface AuthContextType {
     trxId: string,
     senderPhone: string,
     method: 'bkash' | 'nagad' | 'rocket' | 'upay'
-  ) => void;
+  ) => Promise<{ success: boolean; error?: string }>;
   approvePendingSubscription: () => void;
   cancelPendingSubscription: () => void;
   upgradeSubscription: (tier: SubscriptionTier) => void;
@@ -233,31 +233,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let updatedEndDate = prev.subscriptionEndDate;
         let updatedPending = prev.pendingSubscription;
 
+        // Subscription tier and expiry come strictly and exclusively from user_subscriptions
         if (activeSub?.hasActiveSubscription && activeSub.tier) {
           updatedTier = activeSub.tier;
           updatedEndDate = activeSub.endDate;
+        } else {
+          updatedTier = 'free';
+          updatedEndDate = undefined;
         }
 
+        // payment_requests only affects pending badge status, NEVER resurrects tier
         if (latestPay) {
           if (latestPay.status === 'pending') {
             updatedPending = latestPay;
-          } else if (latestPay.status === 'approved') {
-            updatedPending = undefined;
-            if (!activeSub?.hasActiveSubscription) {
-              updatedTier = latestPay.plan;
-              updatedEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-            }
-          } else if (latestPay.status === 'rejected') {
+          } else {
             updatedPending = undefined;
           }
-        } else {
+        } else if (!isSupabaseConfigured()) {
           const localList = getStoredLocalPayments();
           const localPay = localList.find((p) => p.userId === userId || p.userEmail === prev.email);
           if (localPay?.status === 'pending') {
             updatedPending = localPay;
-          } else if (localPay?.status === 'approved' || localPay?.status === 'rejected') {
+          } else {
             updatedPending = undefined;
           }
+        } else {
+          updatedPending = undefined;
         }
 
         if (
@@ -309,30 +310,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLatestPayment(latestPay);
     }
 
-    // Restore any pending payment request for this user
-    const pendingList = getStoredLocalPayments();
-    const activePending = pendingList.find(
-      (p) => (p.userId === sUser.id || p.userEmail === sUser.email) && p.status === 'pending'
-    );
+    // Restore any pending payment request for this user (only from local storage if Supabase is unconfigured)
+    let activePending: PaymentRequest | undefined = undefined;
+    if (!isSupabaseConfigured()) {
+      const pendingList = getStoredLocalPayments();
+      activePending = pendingList.find(
+        (p) => (p.userId === sUser.id || p.userEmail === sUser.email) && p.status === 'pending'
+      );
+    }
 
     let initialTier: SubscriptionTier = 'free';
     let initialEndDate: string | undefined = undefined;
     let initialPending: PaymentRequest | undefined = undefined;
 
+    // Subscription tier and expiry come strictly and exclusively from user_subscriptions
     if (activeSub?.hasActiveSubscription && activeSub.tier) {
       initialTier = activeSub.tier;
       initialEndDate = activeSub.endDate;
+    } else {
+      initialTier = 'free';
+      initialEndDate = undefined;
     }
 
+    // payment_requests only affects pending badge status, NEVER resurrects tier
     if (latestPay) {
       if (latestPay.status === 'pending') {
         initialPending = latestPay;
-      } else if (latestPay.status === 'approved') {
+      } else {
         initialPending = undefined;
-        if (!activeSub?.hasActiveSubscription) {
-          initialTier = latestPay.plan;
-          initialEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-        }
       }
     } else if (activePending) {
       initialPending = activePending;
@@ -1017,14 +1022,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     trxId: string,
     senderPhone: string,
     method: 'bkash' | 'nagad' | 'rocket' | 'upay'
-  ) => {
-    if (!isLoggedIn || !user) {
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isLoggedIn || !user || !supabaseUser?.id) {
+      const msg = 'Please log in and verify your account before submitting a payment request. (পেমেন্ট রিকোয়েস্ট পাঠানোর আগে অনুগ্রহ করে লগইন ও অ্যাকাউন্ট ভেরিফাই করুন।)';
+      dispatchAppNotification({
+        type: 'system',
+        titleBn: '⚠️ লগইন প্রয়োজন',
+        titleEn: '⚠️ Login Required',
+        messageBn: 'পেমেন্ট রিকোয়েস্ট পাঠানোর আগে অনুগ্রহ করে লগইন ও অ্যাকাউন্ট ভেরিফাই করুন।',
+        messageEn: msg
+      });
       openSubscriptionModal();
-      return;
+      return { success: false, error: msg };
     }
 
     const res = await submitPaymentRequest({
-      userId: user.id,
+      userId: supabaseUser.id,
       userName: user.name,
       userEmail: user.email,
       userPhone: user.phone || senderPhone,
@@ -1036,14 +1049,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (!res.success || !res.data) {
+      const errMsg = res.error || 'Payment request could not be submitted. Please try again.';
       dispatchAppNotification({
         type: 'system',
         titleBn: '❌ পেমেন্ট রিকোয়েস্ট ব্যর্থ',
         titleEn: '❌ Payment Submission Failed',
-        messageBn: res.error || 'পেমেন্ট রিকোয়েস্ট জমা দেওয়া সম্ভব হয়নি।',
-        messageEn: res.error || 'Unable to submit payment request.'
+        messageBn: errMsg,
+        messageEn: errMsg
       });
-      return;
+      return { success: false, error: errMsg };
     }
 
     const request = res.data;
@@ -1051,6 +1065,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...user,
       pendingSubscription: request
     });
+    setLatestPayment(request);
 
     dispatchAppNotification({
       type: 'system',
@@ -1059,6 +1074,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       messageBn: `TrxID: ${trxId.toUpperCase()} সফলভাবে জমা হয়েছে। অ্যাডমিন ভেরিফাই করলেই ভিআইপি মেম্বারশিপ চালু হয়ে যাবে।`,
       messageEn: `TrxID: ${trxId.toUpperCase()} has been submitted for admin verification.`
     });
+
+    return { success: true };
   };
 
   // Security: Client-side self-activation is strictly disabled.

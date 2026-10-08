@@ -26,7 +26,7 @@ interface UserDetailModalProps {
 }
 
 export const UserDetailModal: React.FC<UserDetailModalProps> = ({ user, onClose }) => {
-  const { updateUserStatus, resetUserPassword, editUserProfile } = useAdmin();
+  const { updateUserStatus, resetUserPassword, editUserProfile, currentAdmin } = useAdmin();
 
   const [activeTab, setActiveTab] = useState<'profile' | 'edit' | 'password'>('profile');
 
@@ -79,14 +79,33 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({ user, onClose 
     setIsSavingProfile(true);
     setStatusMsg(null);
 
+    // Admin self-protection: prevent logged-in admin from demoting or suspending their own account
+    const isSelf = currentAdmin?.id === user.id;
+    if (isSelf) {
+      if (role !== 'admin' && (user.role === 'admin' || user.role === 'super_admin')) {
+        setStatusMsg({ type: 'error', text: 'নিরাপত্তা সুরক্ষা: আপনি নিজের অ্যাডমিন পদবী পরিবর্তন করতে পারবেন না। (Admins cannot demote their own account.)' });
+        setIsSavingProfile(false);
+        return;
+      }
+      if (status !== 'active' && user.status === 'active') {
+        setStatusMsg({ type: 'error', text: 'নিরাপত্তা সুরক্ষা: আপনি নিজের অ্যাকাউন্ট সাসপেন্ড করতে পারবেন না। (Admins cannot suspend their own account.)' });
+        setIsSavingProfile(false);
+        return;
+      }
+    }
+
     try {
+      const emailChanged = email.trim().toLowerCase() !== user.email.toLowerCase();
+      const roleChanged = role !== user.role;
+      const statusChanged = status !== user.status;
+
       const res = await editUserProfile({
         userId: user.id,
-        email: email.trim().toLowerCase() !== user.email.toLowerCase() ? email.trim().toLowerCase() : undefined,
-        fullName: fullName.trim(),
-        phone: phone.trim() || undefined,
-        role,
-        status,
+        email: emailChanged ? email.trim().toLowerCase() : undefined,
+        fullName: fullName.trim() !== user.name ? fullName.trim() : undefined,
+        phone: phone.trim() !== (user.phone || '') ? (phone.trim() || undefined) : undefined,
+        role: roleChanged ? role : undefined,
+        status: statusChanged ? status : undefined,
         plan: tier === 'basic' ? 'standard' : tier,
       });
 
